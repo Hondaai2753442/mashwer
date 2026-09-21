@@ -63,6 +63,15 @@
     return `+${digits}`;
   };
   const authEmail = (phone) => `${normalizePhone(phone).replace('+', '')}@mashwer.local`;
+  const authErrorMessage = (error) => {
+    const message = String(error?.message || '').toLowerCase();
+    if (message.includes('invalid login credentials')) return 'رقم الهاتف أو كلمة المرور غير صحيحة.';
+    if (message.includes('email not confirmed')) return 'الحساب لم يتم تفعيله بعد. أعد إنشاء الحساب أو تواصل مع الإدارة.';
+    if (message.includes('already registered') || message.includes('already been registered')) return 'هذا الرقم مسجل بالفعل. استخدم تسجيل الدخول.';
+    if (message.includes('rate limit') || message.includes('email rate limit')) return 'تم تجاوز حد التسجيل مؤقتًا. انتظر قليلًا ثم حاول مرة أخرى.';
+    if (message.includes('password') && message.includes('6')) return 'كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل.';
+    return error?.message || 'حدث خطأ في المصادقة. حاول مرة أخرى.';
+  };
   const currentRole = () => state.profile?.role || state.user?.user_metadata?.role || 'customer';
   const isDemo = () => Boolean(state.user?.demo);
   const productFor = (id) => products.find((product) => product.id === id);
@@ -264,19 +273,21 @@
       if (mode === 'login') {
         if (!client) return demoLogin('customer');
         const result = await client.auth.signInWithPassword({ email: authEmail(phone), password });
-        if (result.error) throw new Error('رقم الهاتف أو كلمة المرور غير صحيحة.');
+        if (result.error) throw new Error(authErrorMessage(result.error));
         await completeAuth(result.data.user);
         showToast('تم تسجيل الدخول، أهلاً بك في مشاوير.');
       } else if (mode === 'signup') {
         const fullName = String(data.get('full_name') || '').trim();
         const pin = String(data.get('pin') || '');
+        if (!/^\+20\d{10}$/.test(phone)) throw new Error('اكتب رقم هاتف مصري صحيحًا مثل 01012345678.');
+        if (password.length < 6) throw new Error('كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل.');
         if (!/^\d{6}$/.test(pin)) throw new Error('PIN الاسترجاع يجب أن يكون 6 أرقام.');
         if (!client) return demoLogin('customer', fullName || 'عميل مشاوير');
         const result = await client.auth.signUp({ email: authEmail(phone), password, options: { data: { full_name: fullName, phone, role: 'customer' } } });
-        if (result.error) throw result.error;
+        if (result.error) throw new Error(authErrorMessage(result.error));
         if (!result.data.session) throw new Error('تعذر فتح الحساب تلقائيًا. تأكد من إيقاف تأكيد البريد في Supabase.');
         const pinResult = await client.rpc('set_pin', { pin_value: pin });
-        if (pinResult.error) throw new Error('تم إنشاء الحساب، لكن تعذر حفظ PIN الاسترجاع.');
+        if (pinResult.error) throw new Error(`تم إنشاء الحساب، لكن تعذر حفظ PIN الاسترجاع: ${authErrorMessage(pinResult.error)}`);
         await completeAuth(result.data.user);
         showToast('تم إنشاء حسابك بنجاح.');
       } else {
