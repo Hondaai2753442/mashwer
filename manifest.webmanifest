@@ -1,0 +1,14 @@
+{
+  "name": "مشاوير | توصيل القرية",
+  "short_name": "مشاوير",
+  "description": "طلباتك من محلات قريتك إلى بابك بسرعة.",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fffaf4",
+  "theme_color": "#f06a3b",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
