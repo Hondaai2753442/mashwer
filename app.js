@@ -54,8 +54,45 @@
     adminTab: 'overview',
     location: null,
     busy: false,
-    refreshTimer: null
+    refreshTimer: null,
+    route: 'customer.home',
+    lazyRoutePending: null,
+    lazyRoutesLoaded: new Set(['customer.home', 'courier.home', 'admin.overview'])
   };
+
+  const ICON_REGISTRY = Object.freeze({
+    home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m3 10 9-7 9 7"/><path d="M5 9v11h14V9M9 20v-6h6v6"/></svg>',
+    homeActive: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="m12 2.6 9 7V21H3V9.6l9-7Zm0 3.1L5 11.1V19h14v-7.9l-7-5.4Z"/><path d="M9 13h6v6H9z"/></svg>',
+    orders: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h12v18H6z"/><path d="M9 7h6M9 11h6M9 15h4"/></svg>',
+    ordersActive: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 3h12v18H6zM9 7h6v1.7H9zM9 11h6v1.7H9zM9 15h4v1.7H9z"/></svg>',
+    cart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 4h2l2.1 11.1a2 2 0 0 0 2 1.6h7.8a2 2 0 0 0 2-1.6L20 8H6"/><circle cx="10" cy="20" r="1"/><circle cx="17" cy="20" r="1"/></svg>',
+    cartActive: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 4h2l2.1 11.1a2 2 0 0 0 2 1.6h7.8a2 2 0 0 0 2-1.6L20 8H6l-.4-2H3V4Z"/><circle cx="10" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/></svg>',
+    account: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.2"/><path d="M5 21a7 7 0 0 1 14 0"/></svg>',
+    accountActive: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="8" r="3.3"/><path d="M5 21a7 7 0 0 1 14 0H5Z"/></svg>',
+    couriers: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.2"/><path d="M3.5 21a5.5 5.5 0 0 1 11 0M14 20a4 4 0 0 1 7 0"/></svg>',
+    couriersActive: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.2"/><path d="M3.5 21a5.5 5.5 0 0 1 11 0H3.5ZM14 20a4 4 0 0 1 7 0h-7Z"/></svg>',
+    shops: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 10h16M6 10v10h12V10M5 10l1-6h12l1 6"/><path d="M9 20v-5h6v5"/></svg>',
+    shopsActive: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 10h16v10H4zM6 4h12l1 6H5l1-6Zm3 11h6v5H9z"/></svg>',
+    wallet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h15a2 2 0 0 1 2 2v11H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/><path d="M4 6V4h13M16 13h3"/><circle cx="16" cy="13" r=".5" fill="currentColor"/></svg>',
+    walletActive: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h15a2 2 0 0 1 2 2v11H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-1Zm0-2h13v2H4V4Zm12 8h3v2h-3a1 1 0 1 1 0-2Z"/></svg>'
+  });
+
+  const NAVIGATION_CONFIG = Object.freeze([
+    { id: 'customer-home', label: 'الرئيسية', icon: 'home', activeIcon: 'homeActive', route: 'customer.home', permission: ['customer'], badge: null, order: 10 },
+    { id: 'customer-orders', label: 'طلباتي', icon: 'orders', activeIcon: 'ordersActive', route: 'customer.orders', permission: ['customer'], badge: 'orders', order: 20 },
+    { id: 'customer-cart', label: 'السلة', icon: 'cart', activeIcon: 'cartActive', route: 'customer.cart', permission: ['customer'], badge: 'cart', order: 30 },
+    { id: 'customer-account', label: 'حسابي', icon: 'account', activeIcon: 'accountActive', route: 'customer.account', permission: ['customer'], badge: null, order: 40 },
+    { id: 'courier-home', label: 'الرئيسية', icon: 'home', activeIcon: 'homeActive', route: 'courier.home', permission: ['courier'], badge: null, order: 10 },
+    { id: 'courier-orders', label: 'المشاوير', icon: 'orders', activeIcon: 'ordersActive', route: 'courier.orders', permission: ['courier'], badge: 'orders', order: 20 },
+    { id: 'courier-earnings', label: 'حسابي', icon: 'wallet', activeIcon: 'walletActive', route: 'courier.earnings', permission: ['courier'], badge: null, order: 30 },
+    { id: 'admin-overview', label: 'الرئيسية', icon: 'home', activeIcon: 'homeActive', route: 'admin.overview', permission: ['admin'], badge: null, order: 10 },
+    { id: 'admin-orders', label: 'الطلبات', icon: 'orders', activeIcon: 'ordersActive', route: 'admin.orders', permission: ['admin'], badge: 'pendingOrders', order: 20 },
+    { id: 'admin-couriers', label: 'المندوبون', icon: 'couriers', activeIcon: 'couriersActive', route: 'admin.couriers', permission: ['admin'], badge: null, order: 30 },
+    { id: 'admin-shops', label: 'الأسعار', icon: 'shops', activeIcon: 'shopsActive', route: 'admin.shops', permission: ['admin'], badge: null, order: 40 }
+  ]);
+
+  const ROUTE_LABELS = Object.freeze(Object.fromEntries(NAVIGATION_CONFIG.map((item) => [item.route, item.label])));
+  const getNavigationItems = (role) => NAVIGATION_CONFIG.filter((item) => item.permission.includes(role)).sort((a, b) => a.order - b.order);
 
   const money = (value) => `${Number(value || 0).toLocaleString('ar-EG')} ج.م`;
   const escapeHTML = (value) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' }[char]));
@@ -111,6 +148,61 @@
     return `<span class="status ${statusClass(text)}">${escapeHTML(text)}</span>`;
   }
 
+  function renderIcon(name) {
+    return ICON_REGISTRY[name] || ICON_REGISTRY.orders;
+  }
+
+  function navigationBadge(type) {
+    if (type === 'cart') return state.cart.reduce((sum, item) => sum + item.quantity, 0) || 0;
+    if (type === 'orders') return state.orders.filter((order) => !['delivered', 'cancelled', 'failed', 'rejected'].includes(canonicalStatus(order))).length || 0;
+    if (type === 'pendingOrders') return state.orders.filter((order) => ['pending', 'confirmed', 'searching_driver'].includes(canonicalStatus(order))).length || 0;
+    return 0;
+  }
+
+  function renderNavigation(role, activeRoute = state.route, mobile = false) {
+    return getNavigationItems(role).map((item) => {
+      const active = activeRoute === item.route;
+      const badge = item.badge ? navigationBadge(item.badge) : 0;
+      return `<button class="${mobile ? 'mobile-nav-item' : 'side-nav-item'} ${active ? 'active' : ''}" data-action="navigate-route" data-route="${item.route}" aria-label="${item.label}" title="${item.label}"><span class="nav-icon">${renderIcon(active ? item.activeIcon : item.icon)}</span>${mobile ? `<span>${item.label}</span>` : `<span>${item.label}</span>`}${badge ? `<b class="nav-badge">${badge > 99 ? '99+' : badge}</b>` : ''}</button>`;
+    }).join('');
+  }
+
+  function routeForRole(role) {
+    return getNavigationItems(role)[0]?.route || 'customer.home';
+  }
+
+  function routeIsAllowed(route, role) {
+    return getNavigationItems(role).some((item) => item.route === route);
+  }
+
+  function lazyLoadRoute(route) {
+    if (state.lazyRoutesLoaded.has(route)) return Promise.resolve();
+    state.lazyRoutePending = route;
+    render();
+    return new Promise((resolve) => {
+      const run = () => {
+        if (state.route === route) {
+          state.lazyRoutesLoaded.add(route);
+          state.lazyRoutePending = null;
+          render();
+        }
+        resolve();
+      };
+      if (window.requestIdleCallback) window.requestIdleCallback(run, { timeout: 250 });
+      else window.setTimeout(run, 0);
+    });
+  }
+
+  function navigateRoute(route) {
+    const role = currentRole();
+    if (!routeIsAllowed(route, role)) return showToast('هذه الوجهة غير متاحة لهذا الحساب.');
+    state.route = route;
+    if (role === 'admin') state.adminTab = route.split('.')[1] || 'overview';
+    if (route === 'customer.cart') state.modal = 'cart';
+    else state.modal = null;
+    lazyLoadRoute(route);
+  }
+
   function brand() {
     return `<a class="brand" href="#" data-action="go-home"><img class="brand-mark" src="icon.svg" alt="" /><span>مشاوير<small>توصيل أسرع من باب لباب</small></span></a>`;
   }
@@ -119,6 +211,7 @@
     if (!state.user) app.innerHTML = landingView();
     else if (currentRole() === 'customer') app.innerHTML = customerView();
     else app.innerHTML = dashboardView();
+    if (state.user && currentRole() === 'customer') app.insertAdjacentHTML('beforeend', `<nav class="app-bottom-nav customer-bottom">${renderNavigation('customer', state.route, true)}</nav>`);
     if (state.modal) app.insertAdjacentHTML('beforeend', modalView());
     if (state.user?.demo) app.insertAdjacentHTML('beforeend', demoRibbon());
   }
@@ -167,8 +260,7 @@
   }
 
   function dashboardNav(mobile = false) {
-    const items = currentRole() === 'admin' ? [['overview', '⌂', 'نظرة عامة'], ['orders', '▣', 'الطلبات'], ['couriers', '♙', 'المندوبون'], ['shops', '⌁', 'المحلات']] : [['overview', '⌂', 'الرئيسية'], ['orders', '▣', 'طلباتي'], ['earnings', '◈', 'أرباحي']];
-    return items.map(([id, icon, label]) => `<button class="${(state.adminTab === id || (!state.adminTab && id === 'overview')) ? 'active' : ''}" data-action="dashboard-tab" data-tab="${id}"><b>${icon}</b>${mobile ? `<span>${label}</span>` : label}</button>`).join('') + `<button data-action="logout"><b>↪</b>${mobile ? '<span>خروج</span>' : 'تسجيل الخروج'}</button>`;
+    return renderNavigation(currentRole(), state.route, mobile);
   }
 
   function dashboardTop() {
@@ -268,6 +360,7 @@
     const { data } = await client.from('profiles').select('*').eq('id', user.id).maybeSingle();
     state.profile = data || { full_name: user.user_metadata?.full_name || 'عميل مشاوير', role: user.user_metadata?.role || 'customer', approved: true };
     state.view = state.profile.role === 'customer' ? 'customer' : state.profile.role;
+    state.route = routeForRole(state.profile.role);
     const { data: orderData } = await client.from('orders').select('*').order('created_at', { ascending: false }).limit(10);
     if (orderData) state.orders = orderData.map(mapOrder);
     if (state.orders.length) {
@@ -389,6 +482,7 @@
     state.user = { id: `demo-${role}`, phone: '+201000000000', demo: true, user_metadata: { full_name: name || (role === 'admin' ? 'مدير مشاوير' : role === 'courier' ? 'مندوب مشاوير' : 'عميل مشاوير'), role } };
     state.profile = { full_name: state.user.user_metadata.full_name, role, approved: true };
     state.view = role;
+    state.route = routeForRole(role);
     state.modal = null;
     state.busy = false;
     render();
@@ -509,6 +603,7 @@
     state.profile.role = role;
     state.user.user_metadata.role = role;
     state.view = role;
+    state.route = routeForRole(role);
     render();
   }
 
@@ -519,6 +614,7 @@
     state.user = null;
     state.profile = null;
     state.view = 'customer';
+    state.route = 'customer.home';
     state.modal = null;
     render();
     showToast('تم تسجيل الخروج.');
@@ -558,6 +654,7 @@
     if (action === 'submit-order') { submitOrder(); return; }
     if (action === 'logout') { logout(); return; }
     if (action === 'switch-demo') { setRoleView(target.dataset.view); return; }
+    if (action === 'navigate-route') { navigateRoute(target.dataset.route); return; }
     if (action === 'dashboard-tab') { state.adminTab = target.dataset.tab; render(); return; }
     if (action === 'toggle-online') { state.courierOnline = !state.courierOnline; render(); showToast(state.courierOnline ? 'أصبحت متاحًا لاستقبال الطلبات.' : 'تم إيقاف استقبال الطلبات.'); return; }
     if (action === 'advance-order') { advanceOrder(target.dataset.orderId, target.dataset.nextStatus || null); return; }
@@ -683,6 +780,21 @@
     const filtered = products.filter((product) => (state.selectedCategory === 'الكل' || product.category === state.selectedCategory) && (!state.selectedMerchant || product.merchant_id === state.selectedMerchant));
     const orders = state.orders.slice(0, 3);
     return `<div class="customer-app"><header class="app-header container"><div class="header-location"><span class="location-pin">●</span><div><small>توصيل إلى</small><strong>عنوانك الحالي</strong></div></div><div class="header-actions"><button class="icon-button" data-action="show-notice" data-message="${escapeHTML(state.notifications[0]?.body || 'لا توجد إشعارات جديدة.')}">♧${state.notifications.length ? `<sup>${state.notifications.length}</sup>` : ''}</button><button class="avatar" data-action="logout">${escapeHTML(initials(name))}</button></div></header><main class="customer-main container"><section class="customer-welcome"><div><span class="section-kicker">أهلاً ${escapeHTML(name.split(' ')[0])}</span><h1>جاهز لمشوار<br /><em>يوصلك أسرع.</em></h1><p>اختار طلبك، وإحنا نكمل الطريق.</p></div><div class="welcome-scooter">➤</div></section><section class="service-grid">${[['مطاعم','🍽'],['بقالة','🛒'],['صيدلية','◉'],['طرود','▣']].map(([label, icon]) => `<button class="service-tile" data-action="category" data-category="${label}"><span>${icon}</span><b>${label}</b></button>`).join('')}</section><section class="app-section"><div class="section-heading"><div><span class="section-kicker">آخر حركة</span><h2>طلباتك</h2></div><button class="link-button" data-action="show-notice" data-message="كل طلباتك محفوظة داخل حسابك.">السجل الكامل ←</button></div><div class="customer-order-list">${orders.length ? orders.map((order) => `<article class="customer-order-card"><div class="customer-order-head"><span class="order-number">#${escapeHTML(String(order.id || '').slice(-4) || '1258')}</span>${statusBadge(order.statusText || order.status)}</div><h3>${escapeHTML(order.merchant || 'طلب مشاوير')}</h3><p>📍 ${escapeHTML(order.address || 'العنوان غير محدد')}</p>${order.courier?.full_name ? `<small class="courier-contact">المندوب: ${escapeHTML(order.courier.full_name)}${order.courier.phone ? ` · ${escapeHTML(order.courier.phone)}` : ''}</small>` : ''}<div class="customer-order-actions"><strong>${money(order.total)}</strong><button class="primary-button small-button" data-action="track-order" data-order-id="${escapeHTML(order.id || '')}">تتبع الطلب</button>${canonicalStatus(order) === 'pending' ? `<button class="ghost-button small-button" data-action="cancel-order" data-order-id="${escapeHTML(order.id || '')}">إلغاء</button>` : ''}</div></article>`).join('') : '<div class="empty-state">لم تطلب شيئًا بعد. أول مشوار مستنيك.</div>'}</div></section><section class="app-section"><div class="section-heading"><div><span class="section-kicker">اختيارات قريبة</span><h2>محلات قريتك</h2></div><button class="link-button" data-action="category" data-category="الكل">عرض الكل ←</button></div><div class="merchant-grid">${merchants.map(merchantCard).join('')}</div></section><section id="products" class="app-section"><div class="section-heading"><div><span class="section-kicker">اطلب اللي تحتاجه</span><h2>${state.selectedMerchant ? escapeHTML(selectedMerchant().name) : 'الأكثر طلبًا'}</h2></div><button class="link-button" data-action="open-cart">السلة (${state.cart.reduce((sum, item) => sum + item.quantity, 0)})</button></div><div class="product-grid">${filtered.map(productCard).join('') || '<div class="empty-state">لا توجد أصناف في هذا القسم بعد.</div>'}</div></section></main></div>`;
+  }
+
+  function dashboardTop() {
+    const admin = currentRole() === 'admin';
+    const name = state.profile?.full_name || state.user?.user_metadata?.full_name || roleName(currentRole());
+    const pageLabel = ROUTE_LABELS[state.route] || roleName(currentRole());
+    return `<section class="dashboard-heading"><div><span class="section-kicker">${admin ? 'صباح الخير' : 'جاهز للمشوار؟'} · ${escapeHTML(pageLabel)}</span><h1>${admin ? 'لوحة تحكم مشاوير' : `أهلاً ${escapeHTML(name.split(' ')[0])}`}</h1><p>${admin ? 'كل حركة الطلبات والمندوبين أمامك.' : 'استقبل طلبات جديدة وابقَ سابقًا بخطوة.'}</p></div><span class="online-badge ${state.courierOnline ? 'online' : ''}">${admin ? 'متصل الآن' : state.courierOnline ? 'متاح للعمل' : 'غير متاح'}</span></section>`;
+  }
+
+  function dashboardView() {
+    const role = currentRole();
+    const activeRoute = state.route || routeForRole(role);
+    const loading = state.lazyRoutePending === activeRoute;
+    const content = loading ? `<section class="route-loading"><span class="loading-dot"></span><span>جارٍ فتح ${escapeHTML(ROUTE_LABELS[activeRoute] || 'الوجهة')}...</span></section>` : `${dashboardTop()}${role === 'admin' ? adminView() : courierView()}`;
+    return `<div class="dashboard-layout"><aside class="side-panel">${brand()}<nav class="side-nav" aria-label="التنقل الرئيسي">${renderNavigation(role, activeRoute)}</nav><div class="side-footer">مشاوير<br />لوحة ${roleName(role)}<br /><span>${escapeHTML(ROUTE_LABELS[activeRoute] || '')}</span></div></aside><main class="dashboard-main">${content}</main><nav class="mobile-nav" aria-label="التنقل الرئيسي">${renderNavigation(role, activeRoute, true)}</nav></div>`;
   }
 
   async function boot() {
