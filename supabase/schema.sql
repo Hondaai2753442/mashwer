@@ -371,10 +371,6 @@ create policy "orders visible to participants" on public.orders for select using
   auth.uid() = user_id
   or auth.uid() = courier_id
   or public.is_admin()
-  or (courier_id is null and exists (
-    select 1 from public.profiles p
-    where p.id = auth.uid() and p.role = 'courier' and p.approved = true
-  ))
 );
 drop policy if exists "customers create orders" on public.orders;
 create policy "customers create orders" on public.orders for insert with check (auth.uid() = user_id);
