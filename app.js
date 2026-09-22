@@ -39,6 +39,7 @@
     profile: null,
     view: 'customer',
     authMode: 'login',
+    authRole: 'customer',
     modal: null,
     selectedCategory: 'الكل',
     selectedMerchant: null,
@@ -56,6 +57,7 @@
   const escapeHTML = (value) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' }[char]));
   const initials = (value) => String(value || 'م').trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join('') || 'م';
   const roleName = (role) => ({ admin: 'الإدارة', courier: 'المندوب', customer: 'المستخدم' }[role] || 'المستخدم');
+  const loginRoles = ['customer', 'courier', 'admin'];
   const normalizePhone = (value) => {
     const digits = String(value || '').replace(/\D/g, '');
     if (digits.startsWith('20')) return `+${digits}`;
@@ -110,7 +112,7 @@
 
   function landingView() {
     return `<div class="app-shell">
-      <header class="topbar container">${brand()}<div class="nav-actions"><button class="ghost-button" data-action="open-auth" data-mode="login">تسجيل الدخول</button><button class="primary-button" data-action="open-auth" data-mode="signup">إنشاء حساب</button></div></header>
+      <header class="topbar container">${brand()}<div class="nav-actions"><button class="ghost-button" data-action="open-auth" data-mode="login" data-role="customer">دخول مستخدم</button><button class="ghost-button" data-action="open-auth" data-mode="login" data-role="courier">دخول مندوب</button><button class="ghost-button" data-action="open-auth" data-mode="login" data-role="admin">دخول مدير</button><button class="primary-button" data-action="open-auth" data-mode="signup" data-role="customer">إنشاء حساب</button></div></header>
       <main>
         <section class="hero-wrap container"><div class="hero"><div class="hero-copy"><div class="eyebrow">كل طلبات القرية في مشوار واحد</div><h1>اللي تحتاجه،<br />يوصلك أسرع.</h1><p>مطاعم، بقالة، صيدلية وطرود من محلات قريتك إلى بابك، مع متابعة واضحة من أول الطلب حتى التسليم.</p><button class="primary-button hero-cta" data-action="open-auth" data-mode="signup">ابدأ مشوارك <span>←</span></button></div><div class="hero-orbit"><div class="speed-lines"></div><div class="scooter">🛵</div></div></div></section>
         <section class="section container"><div class="promo-strip"><div><strong>مشوارك في أمان</strong><span>ادفع للمحل، أو استخدم Vodafone Cash وInstaPay بالطريقة التي تناسبك.</span></div><div class="promo-badge">✦</div></div></section>
@@ -197,11 +199,21 @@
     return `<div class="modal-backdrop" data-action="backdrop"><section class="modal ${state.modal === 'cart' ? 'modal-wide' : ''}" role="dialog" aria-modal="true">${state.modal === 'auth' ? authModal() : cartModal()}</section></div>`;
   }
 
-  function authModal() {
+  function authModalLegacy() {
     const mode = state.authMode;
     const title = mode === 'signup' ? 'ابدأ أول مشوار' : mode === 'forgot' ? 'استرجاع كلمة المرور' : 'أهلاً بك في مشاوير';
     const subtitle = mode === 'signup' ? 'حسابك يفتح في دقيقة، وبدون رسائل أو أكواد.' : mode === 'forgot' ? 'استخدم رقم الهاتف وPIN الاسترجاع الذي اخترته عند التسجيل.' : 'سجل دخولك وتابع طلبك حتى بابك.';
     return `<div class="modal-head"><div><h2>${title}</h2><p>${subtitle}</p></div><button class="close-button" data-action="close-modal">×</button></div><div class="modal-body">${mode !== 'forgot' ? `<div class="auth-tabs"><button class="${mode === 'login' ? 'active' : ''}" data-action="auth-mode" data-mode="login">تسجيل الدخول</button><button class="${mode === 'signup' ? 'active' : ''}" data-action="auth-mode" data-mode="signup">حساب جديد</button></div>` : ''}<form id="auth-form" class="form-grid"><input type="hidden" name="mode" value="${mode}" />${mode === 'signup' ? `<div class="field"><label>الاسم بالكامل</label><input name="full_name" required autocomplete="name" placeholder="مثال: أحمد محمد" /></div>` : ''}<div class="field"><label>رقم الهاتف</label><input name="phone" required inputmode="tel" autocomplete="tel" placeholder="01xxxxxxxxx" /></div>${mode !== 'forgot' ? `<div class="field"><label>كلمة المرور</label><div class="password-row"><input name="password" type="password" required minlength="6" autocomplete="${mode === 'signup' ? 'new-password' : 'current-password'}" placeholder="6 أحرف أو أكثر" /><button type="button" class="password-toggle" data-action="toggle-password">◉</button></div></div>` : `<div class="field"><label>PIN الاسترجاع</label><input name="pin" required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="6 أرقام" /></div><div class="field"><label>كلمة المرور الجديدة</label><input name="password" type="password" required minlength="6" autocomplete="new-password" placeholder="كلمة مرور جديدة" /></div>`}${mode === 'signup' ? `<div class="field"><label>PIN الاسترجاع</label><input name="pin" required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="6 أرقام لا يعرفها أحد غيرك" /></div><div class="form-note">الـPIN ليس كودًا يُرسل إليك؛ هو مفتاح استرجاع تختاره وتحفظه لنفسك. لا تشاركه مع أي شخص.</div>` : ''}<button class="primary-button" type="submit">${mode === 'signup' ? 'إنشاء الحساب' : mode === 'forgot' ? 'تغيير كلمة المرور' : 'دخول آمن'}</button>${mode === 'login' ? '<button type="button" class="link-button" data-action="auth-mode" data-mode="forgot">نسيت كلمة المرور؟ استخدم PIN الاسترجاع</button>' : mode === 'forgot' ? '<button type="button" class="link-button" data-action="auth-mode" data-mode="login">العودة لتسجيل الدخول</button>' : ''}<div class="form-note">للتجربة الآن: يمكنك استعراض واجهات المستخدم والمندوب والإدارة من زر التجربة أسفل الصفحة.</div></form></div>`;
+  }
+
+  function authModal() {
+    const mode = state.authMode;
+    const roleLabel = roleName(state.authRole);
+    const title = mode === 'signup' ? (state.authRole === 'courier' ? 'انضم كمندوب' : 'ابدأ أول مشوار') : mode === 'forgot' ? 'استرجاع كلمة المرور' : `دخول ${roleLabel}`;
+    const subtitle = mode === 'signup' ? (state.authRole === 'courier' ? 'سجّل بياناتك للانضمام إلى فريق المندوبين.' : 'حسابك يفتح في دقيقة، وبدون رسائل أو أكواد.') : mode === 'forgot' ? 'استخدم رقم الهاتف وPIN الاسترجاع الذي اخترته عند التسجيل.' : `سجّل دخولك إلى واجهة ${roleLabel}.`;
+    const roleTabs = mode === 'login' ? `<div class="role-tabs">${loginRoles.map((role) => `<button class="${state.authRole === role ? 'active' : ''}" data-action="auth-role" data-role="${role}">${roleName(role)}</button>`).join('')}</div>` : '';
+    const courierNote = mode === 'signup' && state.authRole === 'courier' ? '<div class="form-note">حساب المندوب يبدأ بانتظار موافقة الإدارة قبل استقبال الطلبات.</div>' : '';
+    return `<div class="modal-head"><div><h2>${title}</h2><p>${subtitle}</p></div><button class="close-button" data-action="close-modal">×</button></div><div class="modal-body">${mode !== 'forgot' ? `<div class="auth-tabs"><button class="${mode === 'login' ? 'active' : ''}" data-action="auth-mode" data-mode="login">تسجيل الدخول</button><button class="${mode === 'signup' ? 'active' : ''}" data-action="auth-mode" data-mode="signup">حساب جديد</button></div>` : ''}${roleTabs}<form id="auth-form" class="form-grid"><input type="hidden" name="mode" value="${mode}" /><input type="hidden" name="role" value="${state.authRole}" />${mode === 'signup' ? `<div class="field"><label>الاسم بالكامل</label><input name="full_name" required autocomplete="name" placeholder="مثال: أحمد محمد" /></div>` : ''}<div class="field"><label>رقم الهاتف</label><input name="phone" required inputmode="tel" autocomplete="tel" placeholder="01xxxxxxxxx" /></div>${mode !== 'forgot' ? `<div class="field"><label>كلمة المرور</label><div class="password-row"><input name="password" type="password" required minlength="6" autocomplete="${mode === 'signup' ? 'new-password' : 'current-password'}" placeholder="6 أحرف أو أكثر" /><button type="button" class="password-toggle" data-action="toggle-password">◉</button></div></div>` : `<div class="field"><label>PIN الاسترجاع</label><input name="pin" required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="6 أرقام" /></div><div class="field"><label>كلمة المرور الجديدة</label><input name="password" type="password" required minlength="6" autocomplete="new-password" placeholder="كلمة مرور جديدة" /></div>`}${mode === 'signup' ? `<div class="field"><label>PIN الاسترجاع</label><input name="pin" required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="6 أرقام لا يعرفها أحد غيرك" /></div><div class="form-note">الـPIN ليس كودًا يُرسل إليك؛ هو مفتاح استرجاع تختاره وتحفظه لنفسك. لا تشاركه مع أي شخص.</div>${courierNote}` : ''}<button class="primary-button" type="submit">${mode === 'signup' ? (state.authRole === 'courier' ? 'إنشاء حساب مندوب' : 'إنشاء الحساب') : mode === 'forgot' ? 'تغيير كلمة المرور' : 'تسجيل الدخول'}</button></form>${mode !== 'forgot' ? `<button class="link-button auth-forgot" data-action="auth-mode" data-mode="forgot">نسيت كلمة المرور؟</button>` : `<button class="link-button auth-forgot" data-action="auth-mode" data-mode="login">العودة لتسجيل الدخول</button>`}</div>`;
   }
 
   function cartModal() {
@@ -274,16 +286,27 @@
         if (!client) return demoLogin('customer');
         const result = await client.auth.signInWithPassword({ email: authEmail(phone), password });
         if (result.error) throw new Error(authErrorMessage(result.error));
+        const expectedRole = String(data.get('role') || 'customer');
+        if (!loginRoles.includes(expectedRole)) throw new Error('نوع الدخول غير صحيح.');
+        await loadProfile(result.data.user);
+        const actualRole = currentRole();
+        if (actualRole !== expectedRole) {
+          await client.auth.signOut();
+          state.profile = null;
+          throw new Error(`هذا الحساب مسجل كـ${roleName(actualRole)}. اختر واجهة الدخول المناسبة.`);
+        }
         await completeAuth(result.data.user);
         showToast('تم تسجيل الدخول، أهلاً بك في مشاوير.');
       } else if (mode === 'signup') {
         const fullName = String(data.get('full_name') || '').trim();
         const pin = String(data.get('pin') || '');
+        const requestedRole = String(data.get('role') || 'customer');
         if (!/^\+20\d{10}$/.test(phone)) throw new Error('اكتب رقم هاتف مصري صحيحًا مثل 01012345678.');
         if (password.length < 6) throw new Error('كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل.');
         if (!/^\d{6}$/.test(pin)) throw new Error('PIN الاسترجاع يجب أن يكون 6 أرقام.');
+        if (!['customer', 'courier'].includes(requestedRole)) throw new Error('إنشاء حساب المدير يتم من الإدارة فقط.');
         if (!client) return demoLogin('customer', fullName || 'عميل مشاوير');
-        const result = await client.auth.signUp({ email: authEmail(phone), password, options: { data: { full_name: fullName, phone, role: 'customer' } } });
+        const result = await client.auth.signUp({ email: authEmail(phone), password, options: { data: { full_name: fullName, phone, role: requestedRole } } });
         if (result.error) throw new Error(authErrorMessage(result.error));
         if (!result.data.session) throw new Error('تعذر فتح الحساب تلقائيًا. تأكد من إيقاف تأكيد البريد في Supabase.');
         const pinResult = await client.rpc('set_pin', { pin_value: pin });
@@ -435,8 +458,9 @@
     if (!target) return;
     const action = target.dataset.action;
     if (action === 'backdrop' && event.target !== target) return;
-    if (action === 'open-auth') { state.modal = 'auth'; state.authMode = target.dataset.mode || 'login'; render(); return; }
+    if (action === 'open-auth') { state.modal = 'auth'; state.authMode = target.dataset.mode || 'login'; state.authRole = loginRoles.includes(target.dataset.role) ? target.dataset.role : 'customer'; render(); return; }
     if (action === 'auth-mode') { state.modal = 'auth'; state.authMode = target.dataset.mode; render(); return; }
+    if (action === 'auth-role') { state.authRole = target.dataset.role; render(); return; }
     if (action === 'close-modal' || action === 'backdrop') { state.modal = null; render(); return; }
     if (action === 'toggle-password') { const input = target.closest('.password-row')?.querySelector('input'); if (input) input.type = input.type === 'password' ? 'text' : 'password'; return; }
     if (action === 'go-home') { event.preventDefault(); state.selectedMerchant = null; state.selectedCategory = 'الكل'; render(); return; }
