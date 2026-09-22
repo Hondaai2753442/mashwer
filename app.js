@@ -59,6 +59,7 @@
   const initials = (value) => String(value || 'م').trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join('') || 'م';
   const roleName = (role) => ({ admin: 'الإدارة', courier: 'المندوب', customer: 'المستخدم' }[role] || 'المستخدم');
   const loginRoles = ['customer', 'courier', 'admin'];
+  const signupRoles = ['customer', 'courier'];
   const normalizePhone = (value) => {
     const digits = String(value || '').replace(/\D/g, '');
     if (digits.startsWith('20')) return `+${digits}`;
@@ -212,7 +213,7 @@
     const roleLabel = roleName(state.authRole);
     const title = mode === 'signup' ? (state.authRole === 'courier' ? 'انضم كمندوب' : 'ابدأ أول مشوار') : mode === 'forgot' ? 'استرجاع كلمة المرور' : `دخول ${roleLabel}`;
     const subtitle = mode === 'signup' ? (state.authRole === 'courier' ? 'سجّل بياناتك للانضمام إلى فريق المندوبين.' : 'حسابك يفتح في دقيقة، وبدون رسائل أو أكواد.') : mode === 'forgot' ? 'استخدم رقم الهاتف وPIN الاسترجاع الذي اخترته عند التسجيل.' : `سجّل دخولك إلى واجهة ${roleLabel}.`;
-    const roleTabs = mode === 'login' ? `<div class="role-tabs">${loginRoles.map((role) => `<button class="${state.authRole === role ? 'active' : ''}" data-action="auth-role" data-role="${role}">${roleName(role)}</button>`).join('')}</div>` : '';
+    const roleTabs = mode !== 'forgot' ? `<div class="role-tabs">${(mode === 'login' ? loginRoles : signupRoles).map((role) => `<button class="${state.authRole === role ? 'active' : ''}" data-action="auth-role" data-role="${role}">${roleName(role)}</button>`).join('')}</div>` : '';
     const courierNote = mode === 'signup' && state.authRole === 'courier' ? '<div class="form-note">حساب المندوب يبدأ بانتظار موافقة الإدارة قبل استقبال الطلبات.</div>' : '';
     return `<div class="modal-head"><div><h2>${title}</h2><p>${subtitle}</p></div><button class="close-button" data-action="close-modal">×</button></div><div class="modal-body">${mode !== 'forgot' ? `<div class="auth-tabs"><button class="${mode === 'login' ? 'active' : ''}" data-action="auth-mode" data-mode="login">تسجيل الدخول</button><button class="${mode === 'signup' ? 'active' : ''}" data-action="auth-mode" data-mode="signup">حساب جديد</button></div>` : ''}${roleTabs}<form id="auth-form" class="form-grid"><input type="hidden" name="mode" value="${mode}" /><input type="hidden" name="role" value="${state.authRole}" />${mode === 'signup' ? `<div class="field"><label>الاسم بالكامل</label><input name="full_name" required autocomplete="name" placeholder="مثال: أحمد محمد" /></div>` : ''}<div class="field"><label>رقم الهاتف</label><input name="phone" required inputmode="tel" autocomplete="tel" placeholder="01xxxxxxxxx" /></div>${mode !== 'forgot' ? `<div class="field"><label>كلمة المرور</label><div class="password-row"><input name="password" type="password" required minlength="6" autocomplete="${mode === 'signup' ? 'new-password' : 'current-password'}" placeholder="6 أحرف أو أكثر" /><button type="button" class="password-toggle" data-action="toggle-password">◉</button></div></div>` : `<div class="field"><label>PIN الاسترجاع</label><input name="pin" required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="6 أرقام" /></div><div class="field"><label>كلمة المرور الجديدة</label><input name="password" type="password" required minlength="6" autocomplete="new-password" placeholder="كلمة مرور جديدة" /></div>`}${mode === 'signup' ? `<div class="field"><label>PIN الاسترجاع</label><input name="pin" required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="6 أرقام لا يعرفها أحد غيرك" /></div><div class="form-note">الـPIN ليس كودًا يُرسل إليك؛ هو مفتاح استرجاع تختاره وتحفظه لنفسك. لا تشاركه مع أي شخص.</div>${courierNote}` : ''}<button class="primary-button" type="submit">${mode === 'signup' ? (state.authRole === 'courier' ? 'إنشاء حساب مندوب' : 'إنشاء الحساب') : mode === 'forgot' ? 'تغيير كلمة المرور' : 'تسجيل الدخول'}</button></form>${mode !== 'forgot' ? `<button class="link-button auth-forgot" data-action="auth-mode" data-mode="forgot">نسيت كلمة المرور؟</button>` : `<button class="link-button auth-forgot" data-action="auth-mode" data-mode="login">العودة لتسجيل الدخول</button>`}</div>`;
   }
@@ -460,7 +461,7 @@
     const action = target.dataset.action;
     if (action === 'backdrop' && event.target !== target) return;
     if (action === 'open-auth') { state.modal = 'auth'; state.authMode = target.dataset.mode || 'login'; state.authRole = loginRoles.includes(target.dataset.role) ? target.dataset.role : 'customer'; render(); return; }
-    if (action === 'auth-mode') { state.modal = 'auth'; state.authMode = target.dataset.mode; render(); return; }
+    if (action === 'auth-mode') { state.modal = 'auth'; state.authMode = target.dataset.mode; if (state.authMode === 'signup' && state.authRole === 'admin') state.authRole = 'customer'; render(); return; }
     if (action === 'auth-role') { state.authRole = target.dataset.role; render(); return; }
     if (action === 'close-modal' || action === 'backdrop') { state.modal = null; render(); return; }
     if (action === 'toggle-password') { const input = target.closest('.password-row')?.querySelector('input'); if (input) input.type = input.type === 'password' ? 'text' : 'password'; return; }
@@ -476,6 +477,15 @@
     if (action === 'cart-inc') { changeCart(target.dataset.product, 1); return; }
     if (action === 'cart-dec') { changeCart(target.dataset.product, -1); return; }
     if (action === 'locate') { getLocation(); return; }
+    if (action === 'use-account-phone') {
+      const phone = state.profile?.phone || state.user?.user_metadata?.phone || state.user?.phone || '';
+      const input = document.getElementById('checkout-phone');
+      if (phone && input) {
+        input.value = phone;
+        showToast('تم استخدام رقم الهاتف المحفوظ في الحساب.');
+      } else showToast('لا يوجد رقم محفوظ في الحساب. اكتب رقم التواصل يدويًا.');
+      return;
+    }
     if (action === 'submit-order') { submitOrder(); return; }
     if (action === 'logout') { logout(); return; }
     if (action === 'switch-demo') { setRoleView(target.dataset.view); return; }
@@ -553,6 +563,13 @@
     const stages = ['تم استلام الطلب', 'قيد التجهيز', 'في الطريق', 'تم التسليم'];
     const current = Math.max(0, stages.indexOf(order.statusText));
     return `<div class="modal-head"><div><span class="section-kicker">تتبع الطلب</span><h2>#${escapeHTML(String(order.id || '').slice(-4) || '1258')}</h2><p>${escapeHTML(order.merchant || 'طلب مشاوير')} · ${money(order.total)}</p></div><button class="close-button" data-action="close-modal">×</button></div><div class="modal-body tracking-body"><div class="tracking-map"><span class="map-road road-one"></span><span class="map-road road-two"></span><span class="map-point start"></span><span class="map-point finish"></span><span class="map-scooter">➤</span></div><div class="tracking-address"><span>📍</span><div><b>التوصيل إلى</b><small>${escapeHTML(order.address || 'العنوان غير محدد')}</small></div></div><div class="timeline">${stages.map((stage, index) => `<div class="timeline-step ${index <= current ? 'done' : ''} ${index === current ? 'current' : ''}"><span></span><div><b>${stage}</b><small>${index <= current ? (index === current ? 'جاري الآن' : 'تم') : 'قريبًا'}</small></div></div>`).join('')}</div><button class="primary-button wide-button" data-action="close-modal">تم</button></div>`;
+  }
+
+  function cartModal() {
+    const subtotal = cartSubtotal();
+    const accountPhone = state.profile?.phone || state.user?.user_metadata?.phone || state.user?.phone || '';
+    if (!state.cart.length) return `<div class="modal-head"><div><h2>السلة فارغة</h2><p>أضف أصنافًا من المحلات أولًا.</p></div><button class="close-button" data-action="close-modal">×</button></div><div class="modal-body"><div class="empty-state">اختار طلبك، وإحنا نكمل الطريق.</div></div>`;
+    return `<div class="modal-head"><div><span class="section-kicker">مشوار جديد</span><h2>راجع طلبك</h2><p>${selectedMerchant() ? escapeHTML(selectedMerchant().name) : 'أضف أصنافًا من محل واحد لكل طلب.'}</p></div><button class="close-button" data-action="close-modal">×</button></div><div class="modal-body checkout-body"><div class="cart-lines">${state.cart.map(cartLine).join('')}</div><div class="form-grid checkout-fields"><div class="field"><label>عنوان التوصيل بالوصف</label><textarea name="address" id="address-input" placeholder="اسم الشارع، علامة مميزة، الدور...">${escapeHTML(state.checkoutAddress || '')}</textarea></div><div class="map-box"><span>📍 ${state.location ? 'تم تحديد موقعك على الخريطة' : 'أضف موقعك لمساعدة المندوب'}</span><button type="button" class="ghost-button small-button" data-action="locate">${state.location ? 'تحديث الموقع' : 'استخدم موقعي'}</button></div><div class="field"><label>رقم التواصل عند الوصول</label><div class="contact-phone-row"><input id="checkout-phone" name="checkout_phone" inputmode="tel" value="${escapeHTML(accountPhone)}" placeholder="01xxxxxxxxx" /><button type="button" class="ghost-button small-button" data-action="use-account-phone">استخدم رقم الحساب</button></div><span class="field-hint">يمكنك تغييره لأي رقم آخر قبل تأكيد الطلب.</span></div><div class="field"><label>طريقة الدفع أو التسوية</label><div class="payment-list"><label class="payment-option"><input type="radio" name="payment" value="paid_to_store" checked /><span>دفعت للمحل، والمطلوب توصيل فقط</span></label><label class="payment-option"><input type="radio" name="payment" value="vodafone_cash" /><span>Vodafone Cash</span></label><label class="payment-option"><input type="radio" name="payment" value="instapay" /><span>InstaPay</span></label><label class="payment-option"><input type="radio" name="payment" value="cash" /><span>الدفع عند الاستلام</span></label></div></div><div class="field"><label>رقم العملية، إن وجد</label><input id="payment-ref" placeholder="اختياري" /></div><div class="order-total"><span>الإجمالي التقريبي</span><span>${money(subtotal)} + ${money(cartFee())} توصيل = ${money(cartTotal())}</span></div><button class="primary-button wide-button" data-action="submit-order">تأكيد الطلب · ${money(cartTotal())}</button></div></div>`;
   }
 
   async function boot() {
