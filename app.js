@@ -283,11 +283,11 @@
     render();
     try {
       if (mode === 'login') {
-        if (!client) return demoLogin('customer');
-        const result = await client.auth.signInWithPassword({ email: authEmail(phone), password });
-        if (result.error) throw new Error(authErrorMessage(result.error));
         const expectedRole = String(data.get('role') || 'customer');
         if (!loginRoles.includes(expectedRole)) throw new Error('نوع الدخول غير صحيح.');
+        if (!client) return demoLogin(expectedRole);
+        const result = await client.auth.signInWithPassword({ email: authEmail(phone), password });
+        if (result.error) throw new Error(authErrorMessage(result.error));
         await loadProfile(result.data.user);
         const actualRole = currentRole();
         if (actualRole !== expectedRole) {
@@ -305,7 +305,7 @@
         if (password.length < 6) throw new Error('كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل.');
         if (!/^\d{6}$/.test(pin)) throw new Error('PIN الاسترجاع يجب أن يكون 6 أرقام.');
         if (!['customer', 'courier'].includes(requestedRole)) throw new Error('إنشاء حساب المدير يتم من الإدارة فقط.');
-        if (!client) return demoLogin('customer', fullName || 'عميل مشاوير');
+        if (!client) return demoLogin(requestedRole, fullName || 'عميل مشاوير');
         const result = await client.auth.signUp({ email: authEmail(phone), password, options: { data: { full_name: fullName, phone, role: requestedRole } } });
         if (result.error) throw new Error(authErrorMessage(result.error));
         if (!result.data.session) throw new Error('تعذر فتح الحساب تلقائيًا. تأكد من إيقاف تأكيد البريد في Supabase.');
