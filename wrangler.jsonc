@@ -1,0 +1,7 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mashwer",
+  "compatibility_date": "2026-09-21",
+  "observability": {"enabled": true},
+  "assets": {"directory": ".", "not_found_handling": "single-page-application"}
+}

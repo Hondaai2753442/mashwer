@@ -1,0 +1,11 @@
+node_modules/
+.git/
+android/
+outputs/
+uploads/
+supabase/
+*.apk
+*.aab
+*.zip
+README.md
+AGENTS.md
