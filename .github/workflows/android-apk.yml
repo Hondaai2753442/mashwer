@@ -40,6 +40,15 @@ jobs:
             "server": { "androidScheme": "https" }
           }
           EOF
+      - name: Verify web assets
+        run: |
+          test -f www/intro.mp4
+          test -f www/logo-official-transparent.png
+          test -f www/navigation.js
+          test -f www/routes/customer-orders.js
+          test -f www/routes/driver-orders.js
+          test -f www/routes/driver-earnings.js
+          test -f www/routes/driver-notifications.js
       - name: Create Android project
         run: npx cap add android
       - name: Sync web app
@@ -54,7 +63,8 @@ jobs:
       - name: Upload Android files
         uses: actions/upload-artifact@v4
         with:
-          name: mashwer-android-v5
+          name: mashwer-android-final
           path: |
             android/app/build/outputs/apk/debug/app-debug.apk
             android/app/build/outputs/bundle/release/app-release.aab
+
