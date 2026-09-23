@@ -7,6 +7,7 @@ create table if not exists public.profiles (
   full_name text not null default 'عميل مشاوير',
   role text not null default 'customer' check (role in ('customer', 'courier', 'admin')),
   approved boolean not null default true,
+  available boolean not null default true,
   pin_hash text,
   pin_salt text,
   pin_attempts integer not null default 0,
@@ -14,6 +15,8 @@ create table if not exists public.profiles (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.profiles add column if not exists available boolean not null default true;
 
 create table if not exists public.merchants (
   id uuid primary key default gen_random_uuid(),
@@ -319,6 +322,27 @@ end;
 $$;
 
 grant execute on function public.assign_order(uuid, uuid) to authenticated;
+
+create or replace function public.set_driver_availability(available_value boolean)
+returns jsonb
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  updated_profile public.profiles%rowtype;
+begin
+  if auth.uid() is null then raise exception 'يجب تسجيل الدخول'; end if;
+  update public.profiles
+  set available = case when approved then coalesce(available_value, false) else false end,
+      updated_at = now()
+  where id = auth.uid() and role = 'courier'
+  returning * into updated_profile;
+  if updated_profile.id is null then raise exception 'حساب المندوب غير موجود'; end if;
+  return jsonb_build_object('id', updated_profile.id, 'approved', updated_profile.approved, 'available', updated_profile.available);
+end;
+$$;
+
+grant execute on function public.set_driver_availability(boolean) to authenticated;
 grant execute on function public.advance_order(uuid, text, text, double precision, double precision) to authenticated;
 
 create or replace function public.order_courier_summary(order_id_value uuid)
