@@ -20,14 +20,16 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install
-      - name: Use JSON Capacitor config
+      - name: Prepare Capacitor web directory
         run: |
           rm capacitor.config.ts
+          mkdir -p www
+          cp index.html app.js config.js styles.css manifest.webmanifest icon.svg 317992.png www/
           cat > capacitor.config.json <<'EOF'
           {
             "appId": "com.mashwer.delivery",
             "appName": "مشاوير",
-            "webDir": ".",
+            "webDir": "www",
             "server": { "androidScheme": "https" }
           }
           EOF
