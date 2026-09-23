@@ -20,6 +20,8 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install
+      - name: Install Capacitor config compiler
+        run: npm install --no-save typescript
       - name: Create Android project
         run: npx cap add android
       - name: Sync web app
