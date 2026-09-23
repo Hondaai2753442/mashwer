@@ -1,3 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="مشاوير">
-  <image href="logo-official-transparent.png" x="0" y="0" width="512" height="512" preserveAspectRatio="xMidYMid meet" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="32" fill="#151515"/>
+  <path d="M18 72c20-2 37-16 50-38 6-10 16-14 29-10-8 6-12 14-13 24 13 1 22 8 28 19-12-5-22-5-31 0-14 8-28 17-42 20-9 2-17-3-21-15Z" fill="#f6c515"/>
+  <path d="M18 82c18 3 33 1 47-7 13-7 26-9 42-3-10 10-21 14-35 13-17-1-32 2-45 8-6-2-9-5-9-11Z" fill="#d62f29"/>
+  <circle cx="38" cy="91" r="9" fill="#151515" stroke="#fff" stroke-width="4"/>
+  <circle cx="91" cy="91" r="9" fill="#151515" stroke="#fff" stroke-width="4"/>
+  <path d="M39 86h27l10-19h10l-7 19h12" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="5"/>
+  <path d="M69 69h-8" stroke="#fff" stroke-linecap="round" stroke-width="5"/>
 </svg>
