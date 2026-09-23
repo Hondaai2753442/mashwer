@@ -2,166 +2,160 @@
   'use strict';
 
   const cfg = window.MASHAWER_CONFIG || {};
+  const hasSupabase = Boolean(window.supabase && cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY && cfg.SUPABASE_ANON_KEY.length > 30);
+  const client = hasSupabase ? window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
   const app = document.getElementById('app');
   const toastNode = document.getElementById('toast');
-  const introScreen = document.getElementById('intro-screen');
-  const introVideo = document.getElementById('intro-video');
-  let introTimer = null;
-  const navigation = window.MASHAWER_NAVIGATION;
-  if (!navigation) throw new Error('Navigation registry failed to load.');
 
-  const {
-    ICON_REGISTRY,
-    CORE_ROUTES,
-    normalizeRole,
-    getNavigationItems,
-    getRouteTitle,
-    isRouteAllowed,
-    loadRoute
-  } = navigation;
-  const hasSupabase = Boolean(window.supabase && cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY);
-  const client = hasSupabase ? window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
-
-  const STATUS_LABELS = Object.freeze({
-    pending: 'جاري البحث عن مندوب', confirmed: 'تم تأكيد الطلب', searching_driver: 'جاري البحث عن مندوب',
-    assigned: 'تم تعيين مندوب', driver_accepted: 'المندوب قبل الطلب', heading_to_pickup: 'في الطريق للاستلام',
-    arrived_pickup: 'وصل للاستلام', picked_up: 'تم استلام الطلب', delivering: 'في الطريق إليك',
-    arrived_destination: 'وصل للعنوان', delivered: 'تم التسليم', cancelled: 'ملغي', rejected: 'مرفوض', failed: 'تعذر التنفيذ'
-  });
-  const STATUS_STEPS = ['pending', 'confirmed', 'searching_driver', 'assigned', 'driver_accepted', 'heading_to_pickup', 'arrived_pickup', 'picked_up', 'delivering', 'arrived_destination', 'delivered'];
-  const ACTIVE_STATUSES = ['pending', 'confirmed', 'searching_driver', 'assigned', 'driver_accepted', 'heading_to_pickup', 'arrived_pickup', 'picked_up', 'delivering', 'arrived_destination'];
-  const TERMINAL_STATUSES = ['delivered', 'cancelled', 'rejected', 'failed'];
-  const STATUS_SYMBOLS = Object.freeze({ pending: '◷', confirmed: '✓', searching_driver: '⌕', assigned: '↗', driver_accepted: '✓', heading_to_pickup: '→', arrived_pickup: '⌖', picked_up: '□', delivering: '→', arrived_destination: '⌖', delivered: '✓', cancelled: '×', rejected: '!', failed: '!' });
-  const CATEGORIES = ['الكل', 'مطاعم', 'بقالة', 'صيدلية', 'طرود'];
-  const ROLE_KEYS = { Customer: 'customer', Driver: 'courier', Admin: 'admin' };
-
-  const DEMO_MERCHANTS = [
-    { id: 'demo-merchant-1', name: 'مطعم البيت الشامي', category: 'مطاعم', description: 'أكل بيتي وسندوتشات طازة', address_text: 'شارع السوق', delivery_value: 18, active: true },
-    { id: 'demo-merchant-2', name: 'سوبر ماركت البركة', category: 'بقالة', description: 'كل احتياجات البيت في مكان واحد', address_text: 'بجوار الوحدة الصحية', delivery_value: 22, active: true },
-    { id: 'demo-merchant-3', name: 'صيدلية الحياة', category: 'صيدلية', description: 'طلبك الصحي يوصلك بأمان', address_text: 'شارع المدرسة القديمة', delivery_value: 15, active: true }
+  const categories = ['الكل', 'مطاعم', 'بقالة', 'صيدلية', 'طرود'];
+  let merchants = [
+    { id: 'm1', name: 'مطعم البيت الشامي', category: 'مطاعم', description: 'أكل بيتي وسندوتشات طازة', eta: '25 - 35 دقيقة', fee: 18, color: 'linear-gradient(135deg,#e76f39,#9e3b31)', symbol: '🍲' },
+    { id: 'm2', name: 'سوبر ماركت البركة', category: 'بقالة', description: 'كل احتياجات البيت في مكان واحد', eta: '35 - 45 دقيقة', fee: 22, color: 'linear-gradient(135deg,#2d8a70,#1c5360)', symbol: '🛒' },
+    { id: 'm3', name: 'صيدلية الحياة', category: 'صيدلية', description: 'طلبك الصحي يوصلك بأمان', eta: '20 - 30 دقيقة', fee: 15, color: 'linear-gradient(135deg,#3e8bc4,#3565a5)', symbol: '✚' }
   ];
-  const DEMO_PRODUCTS = [
-    { id: 'demo-product-1', merchant_id: 'demo-merchant-1', name: 'وجبة مشاوي مشكلة', description: 'تكفي شخصين مع الأرز والسلطة', price: 185, category: 'مطاعم', available: true },
-    { id: 'demo-product-2', merchant_id: 'demo-merchant-1', name: 'كشري مشاوير', description: 'خلطة البيت الحارة', price: 65, category: 'مطاعم', available: true },
-    { id: 'demo-product-3', merchant_id: 'demo-merchant-2', name: 'سلة خضار اليوم', description: 'اختيار طازج من السوق', price: 120, category: 'بقالة', available: true },
-    { id: 'demo-product-4', merchant_id: 'demo-merchant-2', name: 'مياه معدنية', description: 'كرتونة 12 زجاجة', price: 95, category: 'بقالة', available: true },
-    { id: 'demo-product-5', merchant_id: 'demo-merchant-3', name: 'فيتامينات يومية', description: 'بعد مراجعة الوصفة عند الحاجة', price: 160, category: 'صيدلية', available: true }
+  let products = [
+    { id: 'p1', merchant_id: 'm1', name: 'وجبة مشاوي مشكلة', description: 'تكفي شخصين مع الأرز والسلطة', price: 185, emoji: '🍗', category: 'مطاعم' },
+    { id: 'p2', merchant_id: 'm1', name: 'كشري مشاوير', description: 'خلطة البيت الحارة', price: 65, emoji: '🥘', category: 'مطاعم' },
+    { id: 'p3', merchant_id: 'm1', name: 'ساندوتش شاورما', description: 'عيش طازج وصوص خاص', price: 75, emoji: '🌯', category: 'مطاعم' },
+    { id: 'p4', merchant_id: 'm2', name: 'سلة خضار اليوم', description: 'اختيار طازج من السوق', price: 120, emoji: '🥬', category: 'بقالة' },
+    { id: 'p5', merchant_id: 'm2', name: 'مياه معدنية', description: 'كرتونة 12 زجاجة', price: 95, emoji: '💧', category: 'بقالة' },
+    { id: 'p6', merchant_id: 'm2', name: 'مستلزمات منزلية', description: 'منتجات يومية مختارة', price: 80, emoji: '🧺', category: 'بقالة' },
+    { id: 'p7', merchant_id: 'm3', name: 'فيتامينات يومية', description: 'بعد مراجعة الوصفة عند الحاجة', price: 160, emoji: '💊', category: 'صيدلية' },
+    { id: 'p8', merchant_id: 'm3', name: 'مستلزمات إسعاف', description: 'حقيبة صغيرة للبيت', price: 210, emoji: '🩹', category: 'صيدلية' }
   ];
-  const DEMO_ORDERS = [
-    { id: 'DEMO-1042', merchant_id: 'demo-merchant-1', merchant: 'مطعم البيت الشامي', status: 'delivering', total: 238, address: 'شارع المدرسة القديمة', created_at: 'اليوم', items: [] },
-    { id: 'DEMO-1038', merchant_id: 'demo-merchant-2', merchant: 'سوبر ماركت البركة', status: 'delivered', total: 164, address: 'منطقة السوق', created_at: 'أمس', items: [] }
+  const demoOrders = [
+    { id: 'MW-1042', merchant: 'مطعم البيت الشامي', customer: 'أحمد حسن', status: 'progress', statusText: 'مع المندوب', total: 238, address: 'شارع المدرسة القديمة', payment: 'دفعت للمحل', created_at: 'منذ 12 دقيقة' },
+    { id: 'MW-1038', merchant: 'سوبر ماركت البركة', customer: 'سارة محمود', status: 'success', statusText: 'تم التسليم', total: 164, address: 'منطقة السوق', payment: 'Vodafone Cash', created_at: 'أمس' },
+    { id: 'MW-1031', merchant: 'صيدلية الحياة', customer: 'محمود علي', status: 'new', statusText: 'جديد', total: 175, address: 'خلف الوحدة الصحية', payment: 'InstaPay', created_at: 'أمس' }
+  ];
+  const demoCouriers = [
+    { name: 'ياسر محمد', phone: '010•••8421', status: 'نشط', approved: true, orders: 24, earnings: 1860 },
+    { name: 'كريم السيد', phone: '011•••1904', status: 'بانتظار الموافقة', approved: false, orders: 0, earnings: 0 },
+    { name: 'مصطفى عادل', phone: '012•••7338', status: 'غير متصل', approved: true, orders: 17, earnings: 1290 }
   ];
 
   const state = {
     user: null,
     profile: null,
-    demo: false,
-    route: 'customer.home',
-    routeLoading: new Set(),
-    routeReady: new Set(CORE_ROUTES),
-    routeErrors: {},
-    catalog: { status: 'idle', error: null },
-    orders: { status: 'idle', error: null },
-    notifications: { status: 'idle', error: null },
-    merchants: [],
-    products: [],
-    orderRows: [],
-    courierRows: [],
-    customerRows: [],
-    notificationRows: [],
-    category: 'الكل',
-    search: '',
-    selectedMerchant: null,
-    cart: [],
-    checkout: { address: '', phone: '', payment: 'paid_to_store', paymentReference: '', notes: '' },
-    ordersFilter: 'all',
-    trackingOrder: null,
-    trackingHistory: { status: 'idle', rows: [], error: null },
-    trackingLocation: null,
-    modal: null,
+    view: 'customer',
     authMode: 'login',
     authRole: 'customer',
-    busy: false,
-    error: null,
-    offline: !navigator.onLine,
-    adminMerchantId: null,
+    trackingOrder: null,
+    trackingHistory: [],
+    modal: null,
+    selectedCategory: 'الكل',
+    selectedMerchant: null,
+    cart: [],
+    orders: [...demoOrders],
+    couriers: [...demoCouriers],
+    notifications: [],
     liveChannel: null,
+    courierOnline: true,
+    adminTab: 'overview',
+    location: null,
+    busy: false,
     refreshTimer: null,
-    locationWatch: null,
-    toastTimer: null
+    route: 'customer.home',
+    lazyRoutePending: null,
+    lazyRoutesLoaded: new Set(['customer.home', 'courier.home', 'admin.overview'])
   };
 
-  const escapeHTML = (value) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' }[char]));
-  const money = (value) => `${Number(value || 0).toLocaleString('ar-EG')} ج.م`;
-  const initials = (value) => String(value || 'م').trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join('') || 'م';
-  const roleKey = (role) => ROLE_KEYS[normalizeRole(role)] || 'customer';
-  const roleName = (role) => ({ customer: 'المستخدم', courier: 'المندوب', admin: 'الإدارة' }[roleKey(role)] || 'المستخدم');
-  const currentRole = () => roleKey(state.profile?.role || state.user?.user_metadata?.role);
-  const isDemo = () => state.demo === true;
-  const isTerminal = (status) => TERMINAL_STATUSES.includes(status);
-  const merchantFor = (id) => state.merchants.find((merchant) => String(merchant.id) === String(id));
-  const productFor = (id) => state.products.find((product) => String(product.id) === String(id));
-  const routeForRole = (role) => getNavigationItems(role)[0]?.route || 'customer.home';
-  const pageTitle = () => getRouteTitle(state.route) || roleName(currentRole());
-  const orderStatus = (order) => STATUS_LABELS[order?.status] ? order.status : 'pending';
-  const statusTone = (status) => status === 'delivered' ? 'success' : ['cancelled', 'rejected', 'failed'].includes(status) ? 'danger' : ACTIVE_STATUSES.includes(status) ? 'progress' : 'neutral';
-  const renderIcon = (name) => ICON_REGISTRY[name] || ICON_REGISTRY.orders;
-  const CATEGORY_ICONS = Object.freeze({
-    مطاعم: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 3v8M8 3v8M5 7h3M6.5 11v10M16 3v18M16 3c3 2 3 6 0 8"/></svg>',
-    بقالة: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 4h2l2 11h10l2-8H6M9 19h.01M17 19h.01"/><circle cx="9" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/></svg>',
-    صيدلية: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M12 8v8M8 12h8"/></svg>',
-    طرود: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m4 7 8-4 8 4v10l-8 4-8-4V7Z"/><path d="m4 7 8 4 8-4M12 11v10"/></svg>'
+  const ICON_REGISTRY = Object.freeze({
+    home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m3 10 9-7 9 7"/><path d="M5 9v11h14V9M9 20v-6h6v6"/></svg>',
+    homeActive: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="m12 2.6 9 7V21H3V9.6l9-7Zm0 3.1L5 11.1V19h14v-7.9l-7-5.4Z"/><path d="M9 13h6v6H9z"/></svg>',
+    orders: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h12v18H6z"/><path d="M9 7h6M9 11h6M9 15h4"/></svg>',
+    ordersActive: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 3h12v18H6zM9 7h6v1.7H9zM9 11h6v1.7H9zM9 15h4v1.7H9z"/></svg>',
+    cart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 4h2l2.1 11.1a2 2 0 0 0 2 1.6h7.8a2 2 0 0 0 2-1.6L20 8H6"/><circle cx="10" cy="20" r="1"/><circle cx="17" cy="20" r="1"/></svg>',
+    cartActive: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 4h2l2.1 11.1a2 2 0 0 0 2 1.6h7.8a2 2 0 0 0 2-1.6L20 8H6l-.4-2H3V4Z"/><circle cx="10" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/></svg>',
+    account: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.2"/><path d="M5 21a7 7 0 0 1 14 0"/></svg>',
+    accountActive: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="8" r="3.3"/><path d="M5 21a7 7 0 0 1 14 0H5Z"/></svg>',
+    couriers: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.2"/><path d="M3.5 21a5.5 5.5 0 0 1 11 0M14 20a4 4 0 0 1 7 0"/></svg>',
+    couriersActive: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.2"/><path d="M3.5 21a5.5 5.5 0 0 1 11 0H3.5ZM14 20a4 4 0 0 1 7 0h-7Z"/></svg>',
+    shops: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 10h16M6 10v10h12V10M5 10l1-6h12l1 6"/><path d="M9 20v-5h6v5"/></svg>',
+    shopsActive: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 10h16v10H4zM6 4h12l1 6H5l1-6Zm3 11h6v5H9z"/></svg>',
+    wallet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h15a2 2 0 0 1 2 2v11H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/><path d="M4 6V4h13M16 13h3"/><circle cx="16" cy="13" r=".5" fill="currentColor"/></svg>',
+    walletActive: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 6h15a2 2 0 0 1 2 2v11H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-1Zm0-2h13v2H4V4Zm12 8h3v2h-3a1 1 0 1 1 0-2Z"/></svg>'
   });
-  const renderCategoryIcon = (category) => CATEGORY_ICONS[category] || CATEGORY_ICONS.طرود;
 
-  function finishIntro() {
-    if (!introScreen || introScreen.classList.contains('is-hidden')) return;
-    clearTimeout(introTimer);
-    try { sessionStorage.setItem('mashwer_intro_seen', '1'); } catch { /* storage may be unavailable in restricted WebViews */ }
-    document.body.classList.remove('intro-lock');
-    app?.setAttribute('aria-hidden', 'false');
-    introScreen.classList.add('is-hidden');
-    setTimeout(() => introScreen.remove(), 420);
-  }
+  const NAVIGATION_CONFIG = Object.freeze([
+    { id: 'customer-home', label: 'الرئيسية', icon: 'home', activeIcon: 'homeActive', route: 'customer.home', permission: ['customer'], badge: null, order: 10 },
+    { id: 'customer-orders', label: 'طلباتي', icon: 'orders', activeIcon: 'ordersActive', route: 'customer.orders', permission: ['customer'], badge: 'orders', order: 20 },
+    { id: 'customer-cart', label: 'السلة', icon: 'cart', activeIcon: 'cartActive', route: 'customer.cart', permission: ['customer'], badge: 'cart', order: 30 },
+    { id: 'customer-account', label: 'حسابي', icon: 'account', activeIcon: 'accountActive', route: 'customer.account', permission: ['customer'], badge: null, order: 40 },
+    { id: 'courier-home', label: 'الرئيسية', icon: 'home', activeIcon: 'homeActive', route: 'courier.home', permission: ['courier'], badge: null, order: 10 },
+    { id: 'courier-orders', label: 'المشاوير', icon: 'orders', activeIcon: 'ordersActive', route: 'courier.orders', permission: ['courier'], badge: 'orders', order: 20 },
+    { id: 'courier-earnings', label: 'حسابي', icon: 'wallet', activeIcon: 'walletActive', route: 'courier.earnings', permission: ['courier'], badge: null, order: 30 },
+    { id: 'admin-overview', label: 'الرئيسية', icon: 'home', activeIcon: 'homeActive', route: 'admin.overview', permission: ['admin'], badge: null, order: 10 },
+    { id: 'admin-orders', label: 'الطلبات', icon: 'orders', activeIcon: 'ordersActive', route: 'admin.orders', permission: ['admin'], badge: 'pendingOrders', order: 20 },
+    { id: 'admin-couriers', label: 'المندوبون', icon: 'couriers', activeIcon: 'couriersActive', route: 'admin.couriers', permission: ['admin'], badge: null, order: 30 },
+    { id: 'admin-shops', label: 'الأسعار', icon: 'shops', activeIcon: 'shopsActive', route: 'admin.shops', permission: ['admin'], badge: null, order: 40 }
+  ]);
 
-  function startIntro() {
-    if (!introScreen) return;
-    let seen = false;
-    try { seen = sessionStorage.getItem('mashwer_intro_seen') === '1'; } catch { /* continue with the intro */ }
-    if (seen) return finishIntro();
-    introTimer = setTimeout(finishIntro, 9000);
-    introVideo?.addEventListener('ended', finishIntro, { once: true });
-    introVideo?.addEventListener('error', () => {
-      introVideo.classList.add('intro-video-fallback');
-      introTimer = setTimeout(finishIntro, 1800);
-    }, { once: true });
-    const playback = introVideo?.play();
-    if (playback?.catch) playback.catch(() => { introTimer = setTimeout(finishIntro, 1800); });
-  }
+  const ROUTE_LABELS = Object.freeze(Object.fromEntries(NAVIGATION_CONFIG.map((item) => [item.route, item.label])));
+  const getNavigationItems = (role) => NAVIGATION_CONFIG.filter((item) => item.permission.includes(role)).sort((a, b) => a.order - b.order);
 
-  function showToast(message, error = false) {
+  const money = (value) => `${Number(value || 0).toLocaleString('ar-EG')} ج.م`;
+  const escapeHTML = (value) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#039;', '"': '&quot;' }[char]));
+  const initials = (value) => String(value || 'م').trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join('') || 'م';
+  const roleName = (role) => ({ admin: 'الإدارة', courier: 'المندوب', customer: 'المستخدم' }[role] || 'المستخدم');
+  const loginRoles = ['customer', 'courier', 'admin'];
+  const signupRoles = ['customer', 'courier'];
+  const normalizePhone = (value) => {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (digits.startsWith('20')) return `+${digits}`;
+    if (digits.startsWith('0')) return `+20${digits.slice(1)}`;
+    return `+${digits}`;
+  };
+  const authEmail = (phone) => `${normalizePhone(phone).replace('+', '')}@mashwer.local`;
+  const authErrorMessage = (error) => {
+    const message = String(error?.message || '').toLowerCase();
+    if (message.includes('invalid login credentials')) return 'رقم الهاتف أو كلمة المرور غير صحيحة.';
+    if (message.includes('email not confirmed')) return 'الحساب لم يتم تفعيله بعد. أعد إنشاء الحساب أو تواصل مع الإدارة.';
+    if (message.includes('already registered') || message.includes('already been registered')) return 'هذا الرقم مسجل بالفعل. استخدم تسجيل الدخول.';
+    if (message.includes('rate limit') || message.includes('email rate limit')) return 'تم تجاوز حد التسجيل مؤقتًا. انتظر قليلًا ثم حاول مرة أخرى.';
+    if (message.includes('password') && message.includes('6')) return 'كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل.';
+    return error?.message || 'حدث خطأ في المصادقة. حاول مرة أخرى.';
+  };
+  const currentRole = () => state.profile?.role || state.user?.user_metadata?.role || 'customer';
+  const isDemo = () => Boolean(state.user?.demo);
+  const productFor = (id) => products.find((product) => product.id === id);
+  const merchantFor = (id) => merchants.find((merchant) => merchant.id === id);
+  const selectedMerchant = () => state.selectedMerchant ? merchantFor(state.selectedMerchant) : null;
+  const cartSubtotal = () => state.cart.reduce((sum, line) => sum + (line.price * line.quantity), 0);
+  const cartFee = () => selectedMerchant()?.fee || 18;
+  const cartTotal = () => cartSubtotal() + (state.cart.length ? cartFee() : 0);
+  const orderLabels = {
+    pending: 'جاري البحث عن مندوب', confirmed: 'تم تأكيد الطلب', searching_driver: 'جاري البحث عن مندوب', assigned: 'تم تعيين مندوب',
+    driver_accepted: 'المندوب قبل الطلب', heading_to_pickup: 'في الطريق للاستلام', arrived_pickup: 'وصل للاستلام', picked_up: 'تم استلام الطلب',
+    delivering: 'في الطريق إليك', arrived_destination: 'وصل للعنوان', delivered: 'تم التسليم', cancelled: 'ملغي', rejected: 'مرفوض', failed: 'تعذر التنفيذ'
+  };
+  const legacyStatuses = { 'جديد': 'pending', 'مقبول': 'driver_accepted', 'قيد التجهيز': 'heading_to_pickup', 'مع المندوب': 'delivering', 'تم التسليم': 'delivered', 'ملغي': 'cancelled' };
+  const canonicalStatus = (order) => orderLabels[order?.status] ? order.status : (legacyStatuses[order?.statusText] || 'pending');
+
+  function showToast(message) {
     toastNode.textContent = message;
-    toastNode.classList.toggle('toast-error', error);
     toastNode.classList.add('show');
-    clearTimeout(state.toastTimer);
-    state.toastTimer = setTimeout(() => toastNode.classList.remove('show'), 3600);
+    clearTimeout(showToast.timer);
+    showToast.timer = setTimeout(() => toastNode.classList.remove('show'), 3200);
   }
 
-  function reportError(context, error) {
-    console.error(`[Mashwer] ${context}`, error);
-    return error?.message || 'حدث خطأ غير متوقع. حاول مرة أخرى.';
+  function statusClass(status) {
+    const value = legacyStatuses[status] || status;
+    return ({ pending: 'new', confirmed: 'new', searching_driver: 'new', assigned: 'progress', driver_accepted: 'progress', heading_to_pickup: 'progress', arrived_pickup: 'progress', picked_up: 'progress', delivering: 'progress', arrived_destination: 'progress', delivered: 'success', cancelled: 'danger', rejected: 'danger', failed: 'danger' }[value] || 'neutral');
   }
 
-  function statusBadge(status) {
-    const value = orderStatus({ status });
-    return `<span class="status ${statusTone(value)}"><span class="status-symbol" aria-hidden="true">${STATUS_SYMBOLS[value] || '•'}</span><span>${escapeHTML(STATUS_LABELS[value])}</span></span>`;
+  function statusBadge(text) {
+    return `<span class="status ${statusClass(text)}">${escapeHTML(text)}</span>`;
+  }
+
+  function renderIcon(name) {
+    return ICON_REGISTRY[name] || ICON_REGISTRY.orders;
   }
 
   function navigationBadge(type) {
-    if (type === 'cart') return state.cart.reduce((sum, item) => sum + item.quantity, 0);
-    if (type === 'orders') return state.orderRows.filter((order) => ACTIVE_STATUSES.includes(orderStatus(order))).length;
-    if (type === 'pendingOrders') return state.orderRows.filter((order) => ['pending', 'confirmed', 'searching_driver'].includes(orderStatus(order))).length;
-    if (type === 'notifications') return state.notificationRows.filter((notice) => !notice.read_at).length;
+    if (type === 'cart') return state.cart.reduce((sum, item) => sum + item.quantity, 0) || 0;
+    if (type === 'orders') return state.orders.filter((order) => !['delivered', 'cancelled', 'failed', 'rejected'].includes(canonicalStatus(order))).length || 0;
+    if (type === 'pendingOrders') return state.orders.filter((order) => ['pending', 'confirmed', 'searching_driver'].includes(canonicalStatus(order))).length || 0;
     return 0;
   }
 
@@ -169,808 +163,656 @@
     return getNavigationItems(role).map((item) => {
       const active = activeRoute === item.route;
       const badge = item.badge ? navigationBadge(item.badge) : 0;
-      return `<button class="${mobile ? 'mobile-nav-item' : 'side-nav-item'} ${active ? 'active' : ''}" data-action="navigate-route" data-route="${item.route}" aria-label="${escapeHTML(item.label)}" aria-current="${active ? 'page' : 'false'}" title="${escapeHTML(item.label)}"><span class="nav-icon">${renderIcon(active ? item.activeIcon : item.icon)}</span><span>${escapeHTML(item.label)}</span>${badge ? `<b class="nav-badge">${badge > 99 ? '99+' : badge}</b>` : ''}</button>`;
+      return `<button class="${mobile ? 'mobile-nav-item' : 'side-nav-item'} ${active ? 'active' : ''}" data-action="navigate-route" data-route="${item.route}" aria-label="${item.label}" title="${item.label}"><span class="nav-icon">${renderIcon(active ? item.activeIcon : item.icon)}</span>${mobile ? `<span>${item.label}</span>` : `<span>${item.label}</span>`}${badge ? `<b class="nav-badge">${badge > 99 ? '99+' : badge}</b>` : ''}</button>`;
     }).join('');
   }
 
-  function dataState(kind, options = {}) {
-    const source = state[kind];
-    if (source.status === 'loading' || source.status === 'idle') return `<section class="state-card state-loading" aria-busy="true"><span class="loading-dot"></span><h2>جارٍ تحميل ${escapeHTML(options.title || 'البيانات')}</h2><p>نجهز أحدث المعلومات من النظام.</p></section>`;
-    if (source.status === 'error') return `<section class="state-card state-error"><h2>تعذر تحميل ${escapeHTML(options.title || 'البيانات')}</h2><p>${escapeHTML(source.error || 'حدث خطأ في الاتصال.')}</p><button class="primary-button small-button" data-action="retry-data" data-kind="${kind}">إعادة المحاولة</button></section>`;
-    if (source.status === 'empty') return `<section class="state-card state-empty"><h2>${escapeHTML(options.emptyTitle || `لا توجد ${options.title || 'بيانات'} حتى الآن`)}</h2><p>${escapeHTML(options.emptyText || 'ستظهر البيانات هنا عند توفرها.')}</p>${options.action || ''}</section>`;
-    return '';
+  function routeForRole(role) {
+    return getNavigationItems(role)[0]?.route || 'customer.home';
   }
 
-  function emptyAction(route, label) {
-    return route ? `<button class="primary-button small-button" data-action="navigate-route" data-route="${route}">${escapeHTML(label)}</button>` : '';
+  function routeIsAllowed(route, role) {
+    return getNavigationItems(role).some((item) => item.route === route);
   }
 
-  function normalizePhone(value) {
-    const digits = String(value || '').replace(/\D/g, '');
-    if (digits.startsWith('20')) return `+${digits}`;
-    if (digits.startsWith('0')) return `+20${digits.slice(1)}`;
-    return `+${digits}`;
+  function lazyLoadRoute(route) {
+    if (state.lazyRoutesLoaded.has(route)) return Promise.resolve();
+    state.lazyRoutePending = route;
+    render();
+    return new Promise((resolve) => {
+      const run = () => {
+        if (state.route === route) {
+          state.lazyRoutesLoaded.add(route);
+          state.lazyRoutePending = null;
+          render();
+        }
+        resolve();
+      };
+      if (window.requestIdleCallback) window.requestIdleCallback(run, { timeout: 250 });
+      else window.setTimeout(run, 0);
+    });
   }
 
-  function authEmail(phone) {
-    return `${normalizePhone(phone).replace('+', '')}@mashwer.local`;
-  }
-
-  function authErrorMessage(error) {
-    const message = String(error?.message || '').toLowerCase();
-    if (message.includes('invalid login credentials')) return 'رقم الهاتف أو كلمة المرور غير صحيحة.';
-    if (message.includes('email not confirmed')) return 'الحساب لم يتم تفعيله بعد. راجع حالة الحساب ثم حاول مرة أخرى.';
-    if (message.includes('already registered') || message.includes('already been registered')) return 'هذا الرقم مسجل بالفعل. استخدم تسجيل الدخول.';
-    if (message.includes('rate limit')) return 'تم تجاوز حد المحاولات مؤقتًا. انتظر قليلًا ثم حاول مرة أخرى.';
-    if (message.includes('password') && message.includes('6')) return 'كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل.';
-    return error?.message || 'حدث خطأ في المصادقة. حاول مرة أخرى.';
-  }
-
-  function normalizeMerchant(row) {
-    return { ...row, delivery_value: Number(row.delivery_value || 0), active: row.active !== false };
-  }
-
-  function normalizeProduct(row) {
-    return { ...row, price: Number(row.price || 0), available: row.available !== false };
-  }
-
-  function normalizeOrder(row) {
-    const merchant = row.merchant || merchantFor(row.merchant_id);
-    let items = row.items;
-    if (typeof items === 'string') {
-      try { items = JSON.parse(items); } catch { items = []; }
-    }
-    return {
-      ...row,
-      id: row.id || row.order_id,
-      merchant_name: row.merchant_name || merchant?.name || 'طلب مشاوير',
-      merchant,
-      status: orderStatus(row),
-      total: Number(row.total || 0),
-      subtotal: Number(row.subtotal || 0),
-      delivery_fee: Number(row.delivery_fee || 0),
-      items: Array.isArray(items) ? items : [],
-      address: row.address_text || row.address || 'العنوان غير محدد',
-      created_label: row.created_label || formatDate(row.created_at)
-    };
-  }
-
-  function localCatalog() {
-    state.merchants = DEMO_MERCHANTS.map(normalizeMerchant);
-    state.products = DEMO_PRODUCTS.map(normalizeProduct);
-  }
-
-  function localOrders() {
-    if (state.orderRows.length && state.orderRows.every((order) => String(order.id).startsWith('DEMO-'))) {
-      state.orders.status = 'success';
-      return;
-    }
+  function navigateRoute(route) {
     const role = currentRole();
-    if (role === 'courier') {
-      state.orderRows = DEMO_ORDERS.map((order) => normalizeOrder({ ...order, courier_id: 'demo-courier', merchant_name: order.merchant }));
-    } else if (role === 'admin') {
-      state.orderRows = DEMO_ORDERS.concat({ id: 'DEMO-1031', merchant: 'صيدلية الحياة', merchant_name: 'صيدلية الحياة', status: 'pending', total: 175, address: 'خلف الوحدة الصحية', created_at: 'أمس', items: [] }).map(normalizeOrder);
-    } else {
-      state.orderRows = DEMO_ORDERS.map(normalizeOrder);
-    }
-    state.orders.status = state.orderRows.length ? 'success' : 'empty';
-  }
-
-  async function loadCatalog() {
-    state.catalog.status = 'loading';
-    state.catalog.error = null;
-    render();
-    try {
-      if (isDemo()) {
-        localCatalog();
-      } else {
-        const [merchantResult, productResult] = await Promise.all([
-          client.from('merchants').select('*').order('name'),
-          client.from('products').select('*').eq('available', true).order('name')
-        ]);
-        if (merchantResult.error) throw merchantResult.error;
-        if (productResult.error) throw productResult.error;
-        state.merchants = (merchantResult.data || []).map(normalizeMerchant);
-        state.products = (productResult.data || []).map(normalizeProduct);
-      }
-      state.catalog.status = state.merchants.length ? 'success' : 'empty';
-    } catch (error) {
-      state.catalog.status = 'error';
-      state.catalog.error = reportError('catalog', error);
-    }
-    render();
-  }
-
-  async function loadOrders() {
-    state.orders.status = 'loading';
-    state.orders.error = null;
-    render();
-    try {
-      if (isDemo()) {
-        localOrders();
-      } else {
-        let query = client.from('orders').select('*, merchant:merchants(id,name,category,address_text), courier:profiles!orders_courier_id_fkey(id,full_name,phone)').order('created_at', { ascending: false });
-        if (currentRole() === 'customer') query = query.eq('user_id', state.user.id);
-        if (currentRole() === 'courier') query = query.or(`courier_id.eq.${state.user.id},and(courier_id.is.null,status.in.(pending,confirmed,searching_driver))`);
-        const result = await query;
-        if (result.error) throw result.error;
-        state.orderRows = (result.data || []).map(normalizeOrder);
-        state.orders.status = state.orderRows.length ? 'success' : 'empty';
-      }
-    } catch (error) {
-      state.orders.status = 'error';
-      state.orders.error = reportError('orders', error);
-    }
-    render();
-  }
-
-  async function loadNotifications() {
-    state.notifications.status = 'loading';
-    state.notifications.error = null;
-    render();
-    try {
-      if (isDemo()) {
-        state.notificationRows = [{ id: 'demo-notice-1', title: 'أهلاً بك في مشاوير', body: 'تابع طلبك من لحظة الإنشاء حتى التسليم.', read_at: null, created_at: new Date().toISOString() }];
-      } else {
-        const result = await client.from('notifications').select('*').eq('user_id', state.user.id).order('created_at', { ascending: false }).limit(30);
-        if (result.error) throw result.error;
-        state.notificationRows = result.data || [];
-      }
-      state.notifications.status = state.notificationRows.length ? 'success' : 'empty';
-    } catch (error) {
-      state.notifications.status = 'error';
-      state.notifications.error = reportError('notifications', error);
-    }
-    render();
-  }
-
-  async function loadProfile(session) {
-    if (!client || !session?.user) return null;
-    const result = await client.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
-    if (result.error) throw result.error;
-    return result.data || { id: session.user.id, full_name: session.user.user_metadata?.full_name || 'مستخدم مشاوير', role: session.user.user_metadata?.role || 'customer', phone: session.user.user_metadata?.phone || '' };
-  }
-
-  async function refreshUserData() {
-    await Promise.all([loadCatalog(), loadOrders(), loadNotifications()]);
-  }
-
-  function startRealtime() {
-    if (!client || isDemo() || !state.user || state.liveChannel) return;
-    state.liveChannel = client.channel(`mashwer-${state.user.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => loadOrders())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${state.user.id}` }, () => loadNotifications())
-      .subscribe();
-  }
-
-  function stopRealtime() {
-    if (state.liveChannel && client) client.removeChannel(state.liveChannel);
-    state.liveChannel = null;
-  }
-
-  async function openSession(session, profile) {
-    state.user = session.user;
-    state.profile = profile || await loadProfile(session);
-    state.demo = false;
-    state.route = routeForRole(state.profile?.role);
-    state.error = null;
-    startRealtime();
-    await refreshUserData();
-    render();
-  }
-
-  async function bootstrap() {
-    if (!client) {
-      state.error = 'لم يتم إعداد الاتصال بقاعدة البيانات. أضف إعدادات Supabase ثم أعد فتح التطبيق.';
-      render();
-      return;
-    }
-    try {
-      const result = await client.auth.getSession();
-      if (result.error) throw result.error;
-      if (result.data.session) await openSession(result.data.session);
-      else render();
-      client.auth.onAuthStateChange(async (_event, session) => {
-        if (session?.user && !state.user) await openSession(session);
-        if (!session && state.user) await signOut(false);
-      });
-    } catch (error) {
-      state.error = reportError('session', error);
-      render();
-    }
+    if (!routeIsAllowed(route, role)) return showToast('هذه الوجهة غير متاحة لهذا الحساب.');
+    state.route = route;
+    if (role === 'admin') state.adminTab = route.split('.')[1] || 'overview';
+    if (route === 'customer.cart') state.modal = 'cart';
+    else state.modal = null;
+    lazyLoadRoute(route);
   }
 
   function brand() {
-    return `<a class="brand brand-official" href="#" data-action="go-home" aria-label="مشاوير"><img class="brand-mark" src="logo-official-transparent.png" alt="مشاوير" /></a>`;
+    return `<a class="brand" href="#" data-action="go-home"><img class="brand-mark" src="logo-official-transparent.png" alt="" /><span>مشاوير<small>توصيل أسرع من باب لباب</small></span></a>`;
   }
 
-  function formatDate(value) {
-    if (!value) return 'الآن';
-    const date = new Date(value);
-    return Number.isNaN(date.valueOf()) ? escapeHTML(value) : date.toLocaleString('ar-EG', { dateStyle: 'medium', timeStyle: 'short' });
+  function render() {
+    if (!state.user) app.innerHTML = landingView();
+    else if (currentRole() === 'customer') app.innerHTML = customerView();
+    else app.innerHTML = dashboardView();
+    if (state.user && currentRole() === 'customer') app.insertAdjacentHTML('beforeend', `<nav class="app-bottom-nav customer-bottom">${renderNavigation('customer', state.route, true)}</nav>`);
+    if (state.modal) app.insertAdjacentHTML('beforeend', modalView());
+    if (state.user?.demo) app.insertAdjacentHTML('beforeend', demoRibbon());
+  }
+
+  function landingView() {
+    return `<div class="app-shell">
+      <header class="topbar container">${brand()}<div class="nav-actions"><button class="ghost-button" data-action="open-auth" data-mode="login" data-role="customer">دخول مستخدم</button><button class="ghost-button" data-action="open-auth" data-mode="login" data-role="courier">دخول مندوب</button><button class="ghost-button" data-action="open-auth" data-mode="login" data-role="admin">دخول مدير</button><button class="primary-button" data-action="open-auth" data-mode="signup" data-role="customer">إنشاء حساب</button></div></header>
+      <main>
+        <section class="hero-wrap container"><div class="hero"><div class="hero-copy"><div class="eyebrow">كل طلبات القرية في مشوار واحد</div><h1>اللي تحتاجه،<br />يوصلك أسرع.</h1><p>مطاعم، بقالة، صيدلية وطرود من محلات قريتك إلى بابك، مع متابعة واضحة من أول الطلب حتى التسليم.</p><button class="primary-button hero-cta" data-action="open-auth" data-mode="signup">ابدأ مشوارك <span>←</span></button></div><div class="hero-orbit"><div class="speed-lines"></div><div class="scooter">🛵</div></div></div></section>
+        <section class="section container"><div class="promo-strip"><div><strong>مشوارك في أمان</strong><span>ادفع للمحل، أو استخدم Vodafone Cash وInstaPay بالطريقة التي تناسبك.</span></div><div class="promo-badge">✦</div></div></section>
+        <section class="section container"><div class="section-heading"><div><h2>اختار من محلات قريتك</h2><p>كل مكان قريب، وكل طلب له متابعة.</p></div><button class="link-button" data-action="open-auth" data-mode="signup">شاهد الكل ←</button></div><div class="merchant-grid">${merchants.map(merchantCard).join('')}</div></section>
+      </main>
+      <footer class="site-footer"><div class="container footer-inner"><span class="footer-brand">مشاوير</span><span>خدمة توصيل محلية قابلة للتوسع لكل القرى</span></div></footer>
+    </div>`;
   }
 
   function merchantCard(merchant) {
-    const productCount = state.products.filter((product) => String(product.merchant_id) === String(merchant.id)).length;
-    return `<article class="merchant-card"><div class="merchant-art merchant-${escapeHTML(merchant.category)}"><span>${renderCategoryIcon(merchant.category)}</span></div><div class="merchant-card-body"><span class="section-kicker">${escapeHTML(merchant.category)}</span><h3>${escapeHTML(merchant.name)}</h3><p>${escapeHTML(merchant.description || merchant.address_text || 'محل قريب منك')}</p><div class="merchant-meta"><span>${productCount} صنف متاح</span><span>التوصيل ${money(merchant.delivery_value)}</span></div><button class="secondary-button" data-action="select-merchant" data-merchant-id="${escapeHTML(merchant.id)}">تصفح الأصناف</button></div></article>`;
+    return `<article class="merchant-card" data-action="choose-merchant" data-merchant="${merchant.id}"><div class="merchant-cover" style="background:${merchant.color}"><strong>${escapeHTML(merchant.name)}</strong><span>${escapeHTML(merchant.description)}</span><div class="merchant-symbol">${merchant.symbol}</div></div><div class="merchant-body"><div class="merchant-title"><h3>${escapeHTML(merchant.name)}</h3><span class="rating">★ 4.8</span></div><div class="meta-row"><span>توصيل ${merchant.eta}</span><span>${money(merchant.fee)}</span></div></div></article>`;
+  }
+
+  function customerView() {
+    const name = state.profile?.full_name || state.user?.user_metadata?.full_name || 'يا صديقي';
+    const filtered = products.filter((product) => (state.selectedCategory === 'الكل' || product.category === state.selectedCategory) && (!state.selectedMerchant || product.merchant_id === state.selectedMerchant));
+    return `<div class="app-shell"><header class="topbar container">${brand()}<div class="nav-actions"><button class="icon-button" data-action="open-orders" title="طلباتي">◷</button><button class="icon-button" data-action="open-cart" title="السلة">🛒<sup>${state.cart.reduce((s, item) => s + item.quantity, 0) || ''}</sup></button><button class="avatar" data-action="logout" title="تسجيل الخروج">${escapeHTML(initials(name))}</button></div></header>
+      <main>
+        <section class="hero-wrap container"><div class="hero"><div class="hero-copy"><div class="eyebrow">أهلاً ${escapeHTML(name.split(' ')[0])}، جاهز للمشوار؟</div><h1>اطلبها.<br />واحنا نوصلها.</h1><p>اختار من محلات قريتك، اكتب عنوانك، وخلي الباقي علينا.</p><button class="primary-button hero-cta" data-action="scroll-products">ابدأ الطلب <span>←</span></button></div><div class="hero-orbit"><div class="speed-lines"></div><div class="scooter">🛵</div></div></div></section>
+        <section class="section container"><div class="section-heading"><div><h2>تسوق حسب احتياجك</h2><p>كل ما تحتاجه، قريب منك.</p></div></div><div class="chips">${categories.map((category) => `<button class="chip ${state.selectedCategory === category ? 'active' : ''}" data-action="category" data-category="${category}">${category}</button>`).join('')}</div></section>
+        <section class="section container"><div class="section-heading"><div><h2>${state.selectedMerchant ? escapeHTML(selectedMerchant().name) : 'محلات مميزة'}</h2><p>${state.selectedMerchant ? 'اختر اللي نفسك فيه واضفه للسلة.' : 'أماكن موثوقة، ووقت توصيل واضح.'}</p></div>${state.selectedMerchant ? '<button class="link-button" data-action="clear-merchant">كل المحلات ←</button>' : ''}</div><div class="merchant-grid">${merchants.filter((m) => state.selectedCategory === 'الكل' || m.category === state.selectedCategory).map(merchantCard).join('')}</div></section>
+        <section id="products" class="section container"><div class="section-heading"><div><h2>اختيارات اليوم</h2><p>${state.cart.length ? `في السلة ${state.cart.length} أصناف جاهزة للمراجعة.` : 'اضغط + لإضافة أي صنف إلى السلة.'}</p></div><button class="link-button" data-action="open-cart">السلة (${state.cart.reduce((s, item) => s + item.quantity, 0)}) ←</button></div><div class="product-grid">${filtered.map(productCard).join('') || '<div class="empty-state">لا توجد أصناف في هذا القسم بعد.</div>'}</div></section>
+        ${ordersSection()}
+      </main><footer class="site-footer"><div class="container footer-inner"><span class="footer-brand">مشاوير</span><span>طلبك تحت المتابعة حتى بابك</span><button class="link-button" data-action="logout">خروج</button></div></footer>
+    </div>`;
   }
 
   function productCard(product) {
-    const line = state.cart.find((item) => String(item.product_id) === String(product.id));
-    return `<article class="product-card"><div class="product-art"><span>${renderCategoryIcon(product.category)}</span></div><div class="product-card-body"><span class="section-kicker">${escapeHTML(product.category || 'صنف')}</span><h3>${escapeHTML(product.name)}</h3><p>${escapeHTML(product.description || 'تفاصيل الصنف تظهر هنا.')}</p><div class="product-footer"><strong>${money(product.price)}</strong><button class="add-button" data-action="add-to-cart" data-product-id="${escapeHTML(product.id)}" aria-label="أضف ${escapeHTML(product.name)}">${line ? `+${line.quantity}` : '+'}</button></div></div></article>`;
+    return `<article class="product-card"><div class="product-thumb">${product.emoji}</div><h3>${escapeHTML(product.name)}</h3><p>${escapeHTML(product.description)}</p><div class="product-footer"><span class="price">${money(product.price)}</span><button class="add-button" data-action="add-cart" data-product="${product.id}" aria-label="إضافة">+</button></div></article>`;
   }
 
-  function orderCard(order, options = {}) {
-    const status = orderStatus(order);
-    const action = options.action || (currentRole() === 'customer' ? 'track-order' : currentRole() === 'courier' ? 'open-driver-order' : 'open-admin-order');
-    const actionLabel = options.actionLabel || (currentRole() === 'customer' ? 'متابعة الطلب' : currentRole() === 'courier' ? 'فتح المشوار' : 'إدارة الطلب');
-    const courier = order.courier?.full_name ? `<small class="muted">المندوب: ${escapeHTML(order.courier.full_name)}</small>` : '';
-    return `<article class="order-card"><div class="order-card-top"><span class="order-number">#${escapeHTML(String(order.id || '').slice(-8))}</span>${statusBadge(status)}</div><div class="order-card-main"><div><span class="section-kicker">${escapeHTML(order.created_label || formatDate(order.created_at))}</span><h3>${escapeHTML(order.merchant_name)}</h3><p><span class="address-marker" aria-hidden="true">●</span> ${escapeHTML(order.address)}</p>${courier}</div><strong>${money(order.total)}</strong></div><div class="order-card-actions"><button class="secondary-button" data-action="${action}" data-order-id="${escapeHTML(order.id)}">${escapeHTML(actionLabel)}</button>${options.allowCancel && ACTIVE_STATUSES.includes(status) ? '<button class="link-button danger-link" data-action="cancel-order" data-order-id="' + escapeHTML(order.id) + '">إلغاء الطلب</button>' : ''}</div></article>`;
+  function ordersSection() {
+    const orders = state.orders.slice(0, 3);
+    return `<section id="orders" class="section container"><div class="section-heading"><div><h2>آخر طلباتك</h2><p>تقدر تتابع كل مشوار من هنا.</p></div><button class="link-button" data-action="show-notice" data-message="صفحة سجل الطلبات الكاملة ستكون متاحة في الإصدار التالي.">كل الطلبات ←</button></div><div class="dashboard-card">${orders.length ? orders.map((order) => `<div class="courier-order"><div class="order-main"><strong>${escapeHTML(order.merchant || 'طلب مشاوير')}</strong><span>${escapeHTML(order.address || 'العنوان غير محدد')} · ${escapeHTML(order.created_at || 'الآن')}</span></div><div class="order-actions">${statusBadge(order.statusText || order.status || 'جديد')}<strong>${money(order.total)}</strong></div></div>`).join('') : '<div class="empty-state">لم تطلب شيئًا بعد. أول مشوار مستنيك.</div>'}</div></section>`;
   }
 
-  function statsCard(label, value, icon, tone = '') {
-    return `<article class="stat-card ${tone}"><span class="stat-icon">${renderIcon(icon)}</span><div><span>${escapeHTML(label)}</span><strong>${escapeHTML(value)}</strong></div></article>`;
+  function dashboardView() {
+    return `<div class="dashboard-layout"><aside class="side-panel">${brand()}<nav class="side-nav">${dashboardNav()}</nav><div class="side-footer">مشاوير<br />لوحة ${roleName(currentRole())}<br /><span>الإصدار 1.0</span></div></aside><main class="dashboard-main">${dashboardTop()}${currentRole() === 'admin' ? adminView() : courierView()}</main><nav class="mobile-nav">${dashboardNav(true)}</nav></div>`;
   }
 
-  function routeLoadingView(title) {
-    return `<main class="route-loading" aria-busy="true"><h1>${escapeHTML(title)}</h1><span class="loading-dot"></span><span>جارٍ فتح ${escapeHTML(title)}...</span></main>`;
+  function dashboardNav(mobile = false) {
+    return renderNavigation(currentRole(), state.route, mobile);
   }
 
-  function renderLanding() {
-    const message = state.error ? `<div class="form-note error-note">${escapeHTML(state.error)}</div>` : '';
-    return `<div class="landing-view"><header class="landing-header container">${brand()}<button class="ghost-button" data-action="open-auth" data-mode="login" data-role="customer">تسجيل الدخول</button></header><main class="landing-main container"><section class="landing-hero"><div class="landing-copy"><span class="landing-kicker">مشاوير · توصيل محلي</span><h1>من قلب قريتك،<br /><em>يوصلك أسرع.</em></h1><p>مطاعم، بقالة، صيدلية وطرود. اطلب من المحلات القريبة وتابع كل مرحلة بوضوح.</p><div class="landing-actions"><button class="primary-button" data-action="open-auth" data-mode="signup" data-role="customer">إنشاء حساب عميل</button><button class="light-button" data-action="open-auth" data-mode="login" data-role="courier">أنا مندوب</button><button class="text-button" data-action="enter-demo">استعراض التطبيق</button></div>${message}</div><div class="landing-mark"><div class="mark-swoosh"></div><img src="icon.svg" alt="مشاوير" /><strong>مشاوير</strong><span>دائمًا سابقين بخطوة</span></div></section><section class="entry-section"><div class="section-heading"><div><span class="section-kicker">اختار طريقك</span><h2>تجربة واضحة لكل دور</h2></div><span class="section-hint">دخول آمن حسب نوع الحساب</span></div><div class="entry-grid"><article class="entry-card entry-customer"><div class="entry-icon">⌂</div><h3>مستخدم</h3><p>اطلب من المحلات وتابع مشوارك حتى بابك.</p><button class="entry-button" data-action="open-auth" data-mode="signup" data-role="customer">ابدأ الآن ←</button></article><article class="entry-card entry-courier"><div class="entry-icon">➤</div><h3>مندوب</h3><p>استقبل المشاوير، حدّث الحالة، وتابع دخلك.</p><button class="entry-button" data-action="open-auth" data-mode="login" data-role="courier">دخول المندوب ←</button></article><article class="entry-card entry-admin"><div class="entry-icon">▦</div><h3>إدارة</h3><p>راقب الطلبات، المندوبين، والمحلات من لوحة واحدة.</p><button class="entry-button" data-action="open-auth" data-mode="login" data-role="admin">دخول الإدارة ←</button></article></div></section><section class="trust-strip"><span>✓ أسعار واضحة</span><span>✓ متابعة مباشرة</span><span>✓ محلات قريبة منك</span><span>✓ دفع يناسبك</span></section></main></div>`;
+  function dashboardTop() {
+    const name = state.profile?.full_name || state.user?.user_metadata?.full_name || roleName(currentRole());
+    return `<div class="dashboard-top"><div><h1>${currentRole() === 'admin' ? 'صباح الخير، مدير مشاوير' : `أهلاً ${escapeHTML(name.split(' ')[0])}`}</h1><p>${currentRole() === 'admin' ? 'تابع الحركة، الطلبات والمندوبين من مكان واحد.' : 'خليك متابع، وكل مشوار له حسابه.'}</p></div><div class="button-row"><button class="icon-button" data-action="show-notice" data-message="لا توجد إشعارات جديدة.">♧</button><button class="avatar" data-action="logout">${escapeHTML(initials(name))}</button></div></div>`;
   }
 
-  function renderTopbar() {
-    const unread = state.notificationRows.filter((notice) => !notice.read_at).length;
-    return `<header class="app-header container"><div class="header-location"><span class="location-pin">●</span><div><small>${currentRole() === 'customer' ? 'توصيل إلى' : 'حساب'}</small><strong>${escapeHTML(state.profile?.full_name || roleName(currentRole()))}</strong></div></div><div class="header-actions"><button class="icon-button" data-action="navigate-route" data-route="${currentRole() === 'customer' ? 'customer.notifications' : currentRole() === 'courier' ? 'driver.notifications' : 'admin.notifications'}" title="الإشعارات">${renderIcon(unread ? 'notificationsActive' : 'notifications')}${unread ? `<sup>${unread}</sup>` : ''}</button><button class="avatar" data-action="navigate-route" data-route="${currentRole() === 'customer' ? 'customer.account' : currentRole() === 'courier' ? 'driver.earnings' : 'admin.overview'}" title="الحساب">${escapeHTML(initials(state.profile?.full_name))}</button></div></header>`;
+  function adminView() {
+    const courierList = isDemo() ? demoCouriers : state.couriers;
+    const counts = { all: state.orders.length, new: state.orders.filter((o) => o.statusText === 'جديد').length, couriers: courierList.length, revenue: state.orders.reduce((sum, order) => sum + Number(order.delivery_fee || 0), 0) };
+    return `<section class="stats-grid"><div class="stat-card"><span class="stat-label">طلبات اليوم</span><strong>${counts.all}</strong><span class="stat-note">+12% عن أمس</span></div><div class="stat-card"><span class="stat-label">تحتاج متابعة</span><strong>${counts.new}</strong><span class="stat-note">طلبات جديدة</span></div><div class="stat-card"><span class="stat-label">المندوبون</span><strong>${counts.couriers}</strong><span class="stat-note">${demoCouriers.filter((c) => c.approved).length} موافق عليهم</span></div><div class="stat-card"><span class="stat-label">إجمالي التوصيل</span><strong>${money(counts.revenue)}</strong><span class="stat-note">هذا الشهر</span></div></section>${state.adminTab === 'overview' || state.adminTab === 'orders' ? adminOrders() : state.adminTab === 'couriers' ? adminCouriers() : adminShops()}`;
   }
 
-  function renderShell(content) {
-    const role = currentRole();
-    const current = pageTitle();
-    return `<div class="app-shell role-${role}"><aside class="side-panel"><div class="side-brand">${brand()}</div><div class="side-role"><span>مساحة ${escapeHTML(roleName(role))}</span><strong>${escapeHTML(current)}</strong></div><nav class="side-nav" aria-label="التنقل الرئيسي">${renderNavigation(role)}</nav><button class="side-logout" data-action="logout"><span>${renderIcon('account')}</span>تسجيل الخروج</button></aside><div class="app-content">${renderTopbar()}<div class="offline-banner ${state.offline ? 'visible' : ''}">أنت غير متصل حاليًا. نعرض آخر بيانات متاحة.</div>${content}<nav class="mobile-nav" aria-label="التنقل السفلي">${renderNavigation(role, state.route, true)}</nav></div>${state.modal ? renderModal() : ''}</div>`;
+  function adminOrders() {
+    const rows = (isDemo() ? state.orders : state.orders).slice(0, 10);
+    return `<section class="dashboard-card"><div class="card-heading"><div><h2>حركة الطلبات</h2><span>كل الطلبات في مكان واحد</span></div><button class="primary-button small-button" data-action="show-notice" data-message="إضافة طلب يدوي متاحة من لوحة الطلبات القادمة.">+ طلب جديد</button></div>${rows.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>رقم الطلب</th><th>العميل</th><th>المحل</th><th>الحالة</th><th>الإجمالي</th><th></th></tr></thead><tbody>${rows.map((order, index) => `<tr><td><strong>${escapeHTML(order.id || `MW-${1040 - index}`)}</strong></td><td>${escapeHTML(order.customer || 'عميل مشاوير')}</td><td>${escapeHTML(order.merchant || 'متجر')}</td><td>${statusBadge(order.statusText || 'جديد')}</td><td>${money(order.total)}</td><td><button class="ghost-button small-button" data-action="advance-order" data-order-id="${escapeHTML(order.id || '')}">تحديث</button></td></tr>`).join('')}</tbody></table></div>` : '<div class="empty-state">لا توجد طلبات حتى الآن.</div>'}</section>`;
   }
 
-  function renderCustomerHome() {
-    const filteredMerchants = state.merchants.filter((merchant) => state.category === 'الكل' || merchant.category === state.category);
-    const selected = merchantFor(state.selectedMerchant);
-    const filteredProducts = state.products.filter((product) => (!selected || String(product.merchant_id) === String(selected.id)) && (state.category === 'الكل' || product.category === state.category) && (!state.search || `${product.name} ${product.description || ''}`.toLowerCase().includes(state.search.toLowerCase())));
-    const catalogState = dataState('catalog', { title: 'المحلات', emptyTitle: 'لا توجد محلات متاحة الآن', emptyText: 'سيظهر المحل هنا بعد أن تضيفه الإدارة.' });
-    return `<main class="dashboard-main container"><section class="welcome-panel"><div><span class="section-kicker">أهلاً ${escapeHTML((state.profile?.full_name || 'بك').split(' ')[0])}</span><h1>جاهز لمشوار<br /><em>يوصلك أسرع.</em></h1><p>اختار طلبك، وإحنا نكمل الطريق.</p></div><div class="welcome-scooter">➤</div></section><section class="service-grid">${CATEGORIES.slice(1).map((category) => `<button class="service-tile ${state.category === category ? 'active' : ''}" data-action="set-category" data-category="${category}"><span>${renderCategoryIcon(category)}</span><b>${category}</b></button>`).join('')}</section><section class="app-section"><div class="section-heading"><div><span class="section-kicker">اختيارات قريبة</span><h2>محلات قريتك</h2></div><button class="link-button" data-action="set-category" data-category="الكل">عرض الكل ←</button></div>${catalogState || `<div class="merchant-grid">${filteredMerchants.map(merchantCard).join('')}</div>`}</section><section class="app-section"><div class="section-heading"><div><span class="section-kicker">اطلب اللي تحتاجه</span><h2>${selected ? escapeHTML(selected.name) : 'الأكثر طلبًا'}</h2></div><button class="link-button" data-action="navigate-route" data-route="customer.cart">السلة (${navigationBadge('cart')})</button></div><div class="search-box"><span>⌕</span><input data-input="catalog-search" value="${escapeHTML(state.search)}" placeholder="ابحث عن صنف أو محل" aria-label="البحث في الكتالوج" /></div><div class="category-pills">${CATEGORIES.map((category) => `<button class="pill ${state.category === category ? 'active' : ''}" data-action="set-category" data-category="${category}">${category}</button>`).join('')}</div>${catalogState ? '' : `<div class="product-grid">${filteredProducts.map(productCard).join('') || `<section class="state-card state-empty"><h2>لا توجد أصناف مطابقة</h2><p>غيّر البحث أو اختر قسمًا آخر.</p></section>`}</div>`}</section></main>`;
+  function adminCouriers() {
+    const couriers = isDemo() ? demoCouriers : state.couriers;
+    return `<section class="dashboard-card"><div class="card-heading"><div><h2>المندوبون</h2><span>الموافقة والمتابعة والأرباح الخاصة بكل مندوب</span></div><button class="primary-button small-button" data-action="show-notice" data-message="يمكن فتح التسجيل العام للمندوبين من الإعدادات.">دعوة مندوب</button></div>${couriers.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>المندوب</th><th>الهاتف</th><th>الحالة</th><th>الطلبات</th><th>الأرباح</th><th></th></tr></thead><tbody>${couriers.map((courier) => `<tr><td><strong>${escapeHTML(courier.full_name || courier.name || 'مندوب')}</strong></td><td>${escapeHTML(courier.phone || '')}</td><td>${courier.approved === false ? '<span class="status new">بانتظار الموافقة</span>' : statusBadge(courier.status || 'نشط')}</td><td>${courier.orders || 0}</td><td>${money(courier.earnings || 0)}</td><td><button class="ghost-button small-button" data-action="approve-courier" data-courier-id="${escapeHTML(courier.id || '')}" data-courier="${escapeHTML(courier.full_name || courier.name || 'مندوب')}">${courier.approved === false ? 'موافقة' : 'الملف'}</button></td></tr>`).join('')}</tbody></table></div>` : '<div class="empty-state">لا يوجد مندوبون مسجلون بعد.</div>'}</section>`;
   }
 
-  function renderCustomerOrders() {
-    const orders = state.orderRows.filter((order) => state.ordersFilter === 'all' || orderStatus(order) === state.ordersFilter);
-    return `<main class="dashboard-main container"><div class="page-heading"><div><span class="section-kicker">تاريخ المشاوير</span><h1>طلباتي</h1><p>تابع الطلبات الحالية والسابقة من مكان واحد.</p></div><button class="primary-button" data-action="navigate-route" data-route="customer.home">طلب جديد</button></div><div class="filter-row">${[['all', 'الكل'], ['pending', 'جارية'], ['delivered', 'تم التسليم'], ['cancelled', 'ملغاة']].map(([value, label]) => `<button class="pill ${state.ordersFilter === value ? 'active' : ''}" data-action="orders-filter" data-filter="${value}">${label}</button>`).join('')}</div>${dataState('orders', { title: 'الطلبات', emptyTitle: 'لا توجد طلبات بعد', emptyText: 'ابدأ من المحلات القريبة وأضف أول طلب لك.', action: emptyAction('customer.home', 'ابدأ طلبًا جديدًا') }) || `<div class="orders-list">${orders.length ? orders.map((order) => orderCard(order, { allowCancel: true })).join('') : '<section class="state-card state-empty"><h2>لا توجد نتائج بهذا الفلتر</h2><p>جرّب اختيار الكل لعرض كل الطلبات.</p></section>'}</div>`}</main>`;
+  function adminShops() {
+    return `<section class="dashboard-card"><div class="card-heading"><div><h2>المحلات والرسوم</h2><span>أضف المحلات، الأقسام، ومنطقة التوصيل</span></div><button class="primary-button small-button" data-action="show-notice" data-message="نموذج إضافة محل جديد جاهز للربط بقاعدة البيانات.">+ إضافة محل</button></div><div class="merchant-grid">${merchants.map((merchant) => `<div class="merchant-card"><div class="merchant-cover" style="background:${merchant.color}"><strong>${escapeHTML(merchant.name)}</strong><span>${escapeHTML(merchant.category)}</span><div class="merchant-symbol">${merchant.symbol}</div></div><div class="merchant-body"><div class="merchant-title"><h3>${money(merchant.fee)}</h3><span class="status success">نشط</span></div><div class="meta-row"><span>رسوم التوصيل الحالية</span><button class="link-button" data-action="show-notice" data-message="تعديل الرسوم سيكون حسب المنطقة أو النسبة.">تعديل</button></div></div></div>`).join('')}</div></section>`;
   }
 
-  function renderCustomerCart() {
-    const merchant = merchantFor(state.selectedMerchant || state.cart[0]?.merchant_id);
-    const subtotal = state.cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const fee = state.cart.length ? Number(merchant?.delivery_value || 0) : 0;
-    const total = subtotal + fee;
-    return `<main class="dashboard-main container"><div class="page-heading"><div><span class="section-kicker">قبل تأكيد الطلب</span><h1>السلة</h1><p>راجع الأصناف والعنوان وطريقة الدفع ثم أرسل الطلب.</p></div><button class="secondary-button" data-action="navigate-route" data-route="customer.home">إضافة أصناف</button></div>${state.cart.length ? `<div class="cart-layout"><section class="cart-lines">${state.cart.map((item) => `<article class="cart-line"><div class="product-art small-art"><span>${renderCategoryIcon(item.category)}</span></div><div class="cart-line-copy"><h3>${escapeHTML(item.name)}</h3><p>${money(item.price)} · ${escapeHTML(merchantFor(item.merchant_id)?.name || '')}</p><div class="quantity-control"><button aria-label="تقليل الكمية" data-action="cart-quantity" data-product-id="${escapeHTML(item.product_id)}" data-change="-1">−</button><strong>${item.quantity}</strong><button aria-label="زيادة الكمية" data-action="cart-quantity" data-product-id="${escapeHTML(item.product_id)}" data-change="1">+</button></div></div><strong>${money(item.price * item.quantity)}</strong></article>`).join('')}</section><section class="checkout-card"><h2>بيانات التوصيل</h2><form id="checkout-form" class="form-grid"><div class="field"><label>العنوان</label><input name="address" required value="${escapeHTML(state.checkout.address)}" placeholder="اسم الشارع ورقم المنزل" /></div><div class="field"><label>رقم التواصل</label><input name="phone" required inputmode="tel" value="${escapeHTML(state.checkout.phone || state.profile?.phone || '')}" placeholder="01xxxxxxxxx" /></div><div class="field"><label>طريقة الدفع</label><select name="payment"><option value="paid_to_store" ${state.checkout.payment === 'paid_to_store' ? 'selected' : ''}>الدفع للمحل</option><option value="cash" ${state.checkout.payment === 'cash' ? 'selected' : ''}>كاش عند الاستلام</option><option value="vodafone_cash" ${state.checkout.payment === 'vodafone_cash' ? 'selected' : ''}>Vodafone Cash</option><option value="instapay" ${state.checkout.payment === 'instapay' ? 'selected' : ''}>InstaPay</option></select></div>${['vodafone_cash', 'instapay'].includes(state.checkout.payment) ? '<div class="field"><label>مرجع التحويل</label><input name="payment_reference" value="' + escapeHTML(state.checkout.paymentReference) + '" placeholder="رقم العملية" /></div>' : ''}<div class="field"><label>ملاحظات اختيارية</label><textarea name="notes" rows="3" placeholder="أي تفاصيل تساعد المندوب">${escapeHTML(state.checkout.notes)}</textarea></div><div class="totals"><div><span>الإجمالي الفرعي</span><strong>${money(subtotal)}</strong></div><div><span>التوصيل</span><strong>${money(fee)}</strong></div><div class="total-row"><span>الإجمالي</span><strong>${money(total)}</strong></div></div><button class="primary-button" type="submit" ${state.busy ? 'disabled' : ''}>${state.busy ? 'جارٍ إرسال الطلب...' : 'تأكيد الطلب · ' + money(total)}</button></form></section></div>` : `<section class="state-card state-empty"><h2>السلة فارغة</h2><p>أضف أصنافًا من أحد المحلات القريبة لتبدأ طلبك.</p>${emptyAction('customer.home', 'تصفح المحلات')}</section>`}</main>`;
+  function courierView() {
+    const approved = state.profile?.approved !== false;
+    if (!approved && !isDemo()) return `<section class="dashboard-card"><div class="empty-state"><div style="font-size:42px;margin-bottom:10px">🛵</div><h2>حسابك قيد المراجعة</h2><p>سيظهر لك الطلب بمجرد موافقة الإدارة على حساب المندوب.</p></div></section>`;
+    const assigned = state.orders.slice(0, 3);
+    const earnings = assigned.reduce((sum, order) => sum + Number(order.delivery_fee || 0), 0);
+    return `<section class="stats-grid"><div class="stat-card"><span class="stat-label">طلبات اليوم</span><strong>${assigned.length}</strong><span class="stat-note">طلبات مسندة إليك</span></div><div class="stat-card"><span class="stat-label">أرباحي الحالية</span><strong>${money(earnings)}</strong><span class="stat-note">من رسوم التوصيل</span></div><div class="stat-card"><span class="stat-label">إجمالي الطلبات</span><strong>${state.orders.length}</strong><span class="stat-note">الطلبات الخاصة بك</span></div><div class="stat-card"><span class="stat-label">الحالة الآن</span><strong style="font-size:20px">${state.courierOnline ? 'متاح' : 'غير متاح'}</strong><span class="stat-note">${state.courierOnline ? 'تستقبل طلبات' : 'لن تستقبل طلبات'}</span></div></section><section class="dashboard-card"><div class="card-heading"><div><h2>حالة المندوب</h2><span>فعّل ظهورك لاستقبال مشاوير جديدة</span></div><button class="toggle ${state.courierOnline ? 'on' : ''}" data-action="toggle-online"><i></i></button></div><div class="notice">نصيحة: حدّث حالة الطلب فور الاستلام والتسليم حتى يطمئن العميل.</div></section><section class="dashboard-card"><div class="card-heading"><div><h2>المشاوير الحالية</h2><span>الطلبات الخاصة بك فقط</span></div><span>${assigned.length} طلب</span></div>${assigned.length ? assigned.map((order) => `<div class="courier-order"><div class="order-main"><strong>${escapeHTML(order.merchant || 'طلب مشاوير')}</strong><span>${escapeHTML(order.address || 'العنوان')} · ${escapeHTML(order.customer || 'عميل')}</span></div><div class="order-actions">${statusBadge(order.statusText || 'جديد')}<button class="primary-button small-button" data-action="advance-order" data-order-id="${escapeHTML(order.id || '')}">تحديث الحالة</button></div></div>`).join('') : '<div class="empty-state">لا توجد طلبات مسندة إليك.</div>'}</section>`;
   }
 
-  function renderAccount() {
-    const name = state.profile?.full_name || state.user?.user_metadata?.full_name || 'مستخدم مشاوير';
-    return `<main class="dashboard-main container"><div class="page-heading"><div><span class="section-kicker">ملفك داخل مشاوير</span><h1>حسابي</h1><p>حدّث بيانات التواصل والعنوان الافتراضي بسهولة.</p></div></div><section class="account-grid"><article class="profile-card"><div class="large-avatar">${escapeHTML(initials(name))}</div><div><h2>${escapeHTML(name)}</h2><p>${escapeHTML(state.profile?.phone || state.user?.user_metadata?.phone || '')}</p><span class="role-chip">${escapeHTML(roleName(currentRole()))}</span></div></article><form id="profile-form" class="panel-card form-grid"><h2>البيانات الشخصية</h2><div class="field"><label>الاسم بالكامل</label><input name="full_name" required value="${escapeHTML(name)}" /></div><div class="field"><label>العنوان الافتراضي</label><input name="address" value="${escapeHTML(state.profile?.address_text || '')}" placeholder="يمكنك تغييره عند كل طلب" /></div><button class="primary-button" type="submit" ${state.busy ? 'disabled' : ''}>حفظ التغييرات</button></form></section><section class="panel-card danger-zone"><h2>جلسة الحساب</h2><p>عند تسجيل الخروج ستحتاج إلى إدخال بياناتك مرة أخرى.</p><button class="secondary-button danger-button" data-action="logout">تسجيل الخروج</button></section></main>`;
+  function demoRibbon() {
+    return `<div class="demo-ribbon">وضع التجربة · <button data-action="switch-demo" data-view="customer">مستخدم</button> · <button data-action="switch-demo" data-view="courier">مندوب</button> · <button data-action="switch-demo" data-view="admin">إدارة</button></div>`;
   }
 
-  function renderNotifications() {
-    return `<main class="dashboard-main container"><div class="page-heading"><div><span class="section-kicker">آخر التحديثات</span><h1>الإشعارات</h1><p>تنبيهات الطلبات والحساب تظهر هنا.</p></div><button class="secondary-button" data-action="mark-notifications-read">تعليم الكل كمقروء</button></div>${dataState('notifications', { title: 'الإشعارات', emptyTitle: 'لا توجد إشعارات', emptyText: 'سنخبرك هنا بأي تحديث مهم.' }) || `<div class="notification-list">${state.notificationRows.map((notice) => `<article class="notification-card ${notice.read_at ? '' : 'unread'}"><span class="notification-icon">${renderIcon('notifications')}</span><div><h3>${escapeHTML(notice.title)}</h3><p>${escapeHTML(notice.body)}</p><small>${formatDate(notice.created_at)}</small></div>${notice.order_id ? `<button class="link-button" data-action="track-order" data-order-id="${escapeHTML(notice.order_id)}">فتح الطلب</button>` : ''}</article>`).join('')}</div>`}</main>`;
+  function adminView() {
+    const rows = state.orders.slice(0, 10);
+    const couriers = isDemo() ? demoCouriers : state.couriers;
+    const revenue = state.orders.reduce((sum, order) => sum + Number(order.delivery_fee || 0), 0);
+    const courierOptions = (order) => `<select class="assign-select" data-action="assign-order" data-order-id="${escapeHTML(order.id || '')}" aria-label="توجيه الطلب"><option value="">غير موجّه</option>${couriers.filter((courier) => courier.approved !== false).map((courier) => `<option value="${escapeHTML(courier.id || '')}" ${String(order.courier_id || '') === String(courier.id || '') ? 'selected' : ''}>${escapeHTML(courier.full_name || courier.name || 'مندوب')}</option>`).join('')}</select>`;
+    return `<section class="dashboard-kpis"><div><span>طلبات اليوم</span><strong>${state.orders.length}</strong><small>متزامنة مع النظام</small></div><div><span>تم التسليم</span><strong>${state.orders.filter((o) => o.statusText === 'تم التسليم').length}</strong><small>بنجاح</small></div><div><span>قيد التنفيذ</span><strong>${state.orders.filter((o) => o.statusText !== 'تم التسليم').length}</strong><small>تحتاج متابعة</small></div><div><span>إجمالي التوصيل</span><strong>${money(revenue)}</strong><small>هذا الشهر</small></div></section><section class="admin-panel"><div class="panel-title"><div><span class="section-kicker">الحركة الآن</span><h2>إدارة وتوجيه الطلبات</h2></div><span class="count-pill">${rows.length}</span></div><p class="panel-help">عند اختيار مندوب، يظهر الطلب فورًا في تطبيقه ويظل ظاهرًا للعميل والإدارة.</p><div class="admin-order-list">${rows.length ? rows.map((order) => `<div class="admin-order-row"><span class="order-number">#${escapeHTML(String(order.id || '').slice(-4) || '1258')}</span><span><b>${escapeHTML(order.merchant || 'طلب مشاوير')}</b><small>${escapeHTML(order.customer || 'عميل')} · ${escapeHTML(order.address || 'العنوان')}</small></span>${statusBadge(order.statusText || 'جديد')}<div class="admin-assignment">${courierOptions(order)}<button class="link-button" data-action="track-order" data-order-id="${escapeHTML(order.id || '')}">تفاصيل</button></div></div>`).join('') : '<div class="empty-state">لا توجد طلبات حقيقية بعد.</div>'}</div></section><section class="admin-panel"><div class="panel-title"><div><span class="section-kicker">فريق التوصيل</span><h2>المندوبون</h2></div><span class="count-pill">${couriers.length}</span></div><div class="people-list">${couriers.slice(0, 8).map((courier) => `<div class="person-row"><span class="person-avatar">${escapeHTML(initials(courier.full_name || courier.name))}</span><span><b>${escapeHTML(courier.full_name || courier.name || 'مندوب')}</b><small>${escapeHTML(courier.phone || '')}</small></span><span class="person-state ${courier.approved === false ? 'pending' : ''}">${courier.approved === false ? 'بانتظار الموافقة' : 'متاح'}</span>${courier.approved === false ? `<button class="link-button" data-action="approve-courier" data-courier-id="${escapeHTML(courier.id || '')}" data-courier="${escapeHTML(courier.full_name || courier.name || 'مندوب')}">موافقة</button>` : ''}</div>`).join('') || '<div class="empty-state">لا يوجد مندوبون بعد.</div>'}</div></section>`;
   }
 
-  function renderDriverHome() {
-    const active = state.orderRows.filter((order) => ACTIVE_STATUSES.includes(orderStatus(order)));
-    const available = state.profile?.available === true;
-    return `<main class="dashboard-main container"><section class="driver-hero"><div><span class="section-kicker">مساحة المندوب</span><h1>جاهز لمشوار جديد؟</h1><p>غيّر حالتك لاستقبال المشاوير القريبة منك.</p></div><button class="availability-toggle ${available ? 'online' : ''}" data-action="toggle-availability"><span></span>${available ? 'متاح لاستقبال الطلبات' : 'غير متاح حاليًا'}</button></section><section class="stats-grid">${statsCard('مشاوير نشطة', String(active.length), 'orders', 'stat-orange')}${statsCard('حالة الحساب', state.profile?.approved === false ? 'بانتظار الموافقة' : available ? 'متاح' : 'متوقف', 'account', available ? 'stat-green' : '')}${statsCard('تحديث GPS', state.trackingLocation ? 'مفعّل' : 'عند الحاجة', 'home', '')}</section><section class="app-section"><div class="section-heading"><div><span class="section-kicker">الأولوية الآن</span><h2>المشاوير المتاحة</h2></div><button class="link-button" data-action="navigate-route" data-route="driver.orders">كل المشاوير ←</button></div>${state.profile?.approved === false ? '<section class="state-card state-empty"><h2>الحساب ينتظر موافقة الإدارة</h2><p>ستظهر لك المشاوير بعد اعتماد حساب المندوب.</p></section>' : active.length ? `<div class="orders-list">${active.slice(0, 3).map((order) => orderCard(order, { action: 'open-driver-order', actionLabel: 'فتح المشوار' })).join('')}</div>` : '<section class="state-card state-empty"><h2>لا توجد مشاوير نشطة</h2><p>اترك التطبيق مفتوحًا وسنحدّث القائمة عند وصول طلب جديد.</p></section>'}</section></main>`;
+  async function assignOrder(orderId, courierId) {
+    const order = state.orders.find((item) => String(item.id) === String(orderId));
+    if (!order || !client || isDemo()) return;
+    const { data, error } = await client.rpc('assign_order', { order_id_value: orderId, courier_id_value: courierId || null });
+    if (error) return showToast(error.message || 'تعذر توجيه الطلب. تأكد من صلاحية المدير.');
+    Object.assign(order, mapOrder(Array.isArray(data) ? data[0] : data));
+    render();
+    showToast(courierId ? 'تم توجيه الطلب وسيظهر للمندوب الآن.' : 'تم إلغاء توجيه الطلب.');
   }
 
-  function renderDriverOrders() {
-    const rows = state.orderRows.filter((order) => state.ordersFilter === 'all' || orderStatus(order) === state.ordersFilter);
-    return `<main class="dashboard-main container"><div class="page-heading"><div><span class="section-kicker">التقاط وتسليم</span><h1>المشاوير</h1><p>اقبل الطلبات المتاحة وحدّث الحالة بعد كل خطوة.</p></div><button class="secondary-button" data-action="refresh-orders">تحديث القائمة</button></div><div class="filter-row">${[['all', 'الكل'], ['pending', 'متاحة'], ['delivering', 'في الطريق'], ['delivered', 'مكتملة']].map(([value, label]) => `<button class="pill ${state.ordersFilter === value ? 'active' : ''}" data-action="orders-filter" data-filter="${value}">${label}</button>`).join('')}</div>${dataState('orders', { title: 'المشاوير', emptyTitle: 'لا توجد مشاوير حاليًا', emptyText: 'عند تفعيل حالة التوفر ستظهر الطلبات المتاحة هنا.' }) || `<div class="orders-list">${rows.map((order) => orderCard(order, { action: 'open-driver-order', actionLabel: 'إدارة المشوار' })).join('') || '<section class="state-card state-empty"><h2>لا توجد نتائج بهذا الفلتر</h2><p>جرّب اختيار الكل.</p></section>'}</div>`}</main>`;
+  function handleChange(event) {
+    const target = event.target.closest('[data-action]');
+    if (!target) return;
+    if (target.dataset.action === 'assign-order') assignOrder(target.dataset.orderId, target.value);
+    if (target.dataset.action === 'change-order-status') advanceOrder(target.dataset.orderId, target.value);
   }
 
-  function renderDriverEarnings() {
-    const completed = state.orderRows.filter((order) => orderStatus(order) === 'delivered');
-    const total = completed.reduce((sum, order) => sum + Number(order.delivery_fee || 0), 0);
-    return `<main class="dashboard-main container"><div class="page-heading"><div><span class="section-kicker">ملخص الأداء</span><h1>حساب المندوب</h1><p>تابع المشاوير المكتملة ورسوم التوصيل المسجلة.</p></div></div><section class="stats-grid">${statsCard('المشاوير المكتملة', String(completed.length), 'orders', 'stat-green')}${statsCard('رسوم التوصيل', money(total), 'wallet', 'stat-orange')}${statsCard('التقييم', 'غير متاح', 'account', '')}</section><section class="panel-card"><h2>آخر المشاوير المكتملة</h2>${completed.length ? `<div class="orders-list compact-list">${completed.slice(0, 10).map((order) => orderCard(order, { action: 'open-driver-order', actionLabel: 'التفاصيل' })).join('')}</div>` : '<div class="inline-empty">لا توجد مشاوير مكتملة بعد.</div>'}</section></main>`;
+  function modalView() {
+    return `<div class="modal-backdrop" data-action="backdrop"><section class="modal ${state.modal === 'cart' ? 'modal-wide' : ''}" role="dialog" aria-modal="true">${state.modal === 'auth' ? authModal() : cartModal()}</section></div>`;
   }
 
-  function renderAdminOverview() {
-    const active = state.orderRows.filter((order) => ACTIVE_STATUSES.includes(orderStatus(order)));
-    const revenue = state.orderRows.reduce((sum, order) => sum + Number(order.total || 0), 0);
-    return `<main class="dashboard-main container"><div class="page-heading"><div><span class="section-kicker">لوحة التحكم</span><h1>نظرة عامة</h1><p>تابع حركة مشاوير النظام واتخذ الإجراء المناسب.</p></div><button class="primary-button" data-action="refresh-orders">تحديث البيانات</button></div><section class="stats-grid">${statsCard('إجمالي الطلبات', String(state.orderRows.length), 'orders', 'stat-orange')}${statsCard('طلبات نشطة', String(active.length), 'home', 'stat-green')}${statsCard('قيمة الطلبات', money(revenue), 'wallet', '')}${statsCard('محلات نشطة', String(state.merchants.filter((merchant) => merchant.active).length), 'shops', '')}</section><section class="dashboard-columns"><section class="panel-card"><div class="section-heading"><div><span class="section-kicker">آخر الحركة</span><h2>أحدث الطلبات</h2></div><button class="link-button" data-action="navigate-route" data-route="admin.orders">عرض الكل ←</button></div>${state.orderRows.length ? `<div class="orders-list compact-list">${state.orderRows.slice(0, 5).map((order) => orderCard(order, { action: 'open-admin-order', actionLabel: 'إدارة' })).join('')}</div>` : '<div class="inline-empty">لا توجد طلبات في النظام.</div>'}</section><section class="panel-card"><div class="section-heading"><div><span class="section-kicker">المحلات</span><h2>التغطية الحالية</h2></div><button class="link-button" data-action="navigate-route" data-route="admin.shops">إدارة الأسعار ←</button></div><div class="mini-list">${state.merchants.slice(0, 5).map((merchant) => `<div class="mini-row"><span>${escapeHTML(merchant.name)}</span><strong>${state.products.filter((product) => String(product.merchant_id) === String(merchant.id)).length} أصناف</strong></div>`).join('') || '<div class="inline-empty">لا توجد محلات.</div>'}</div></section></section></main>`;
-  }
-
-  function renderAdminOrders() {
-    const rows = state.orderRows.filter((order) => state.ordersFilter === 'all' || orderStatus(order) === state.ordersFilter);
-    return `<main class="dashboard-main container"><div class="page-heading"><div><span class="section-kicker">التشغيل اليومي</span><h1>الطلبات</h1><p>راجع الطلبات وحدد المندوب أو حدّث الحالة.</p></div><button class="secondary-button" data-action="refresh-orders">تحديث</button></div><div class="filter-row">${[['all', 'الكل'], ['pending', 'جديدة'], ['assigned', 'مع مندوب'], ['delivering', 'قيد التوصيل'], ['delivered', 'مكتملة']].map(([value, label]) => `<button class="pill ${state.ordersFilter === value ? 'active' : ''}" data-action="orders-filter" data-filter="${value}">${label}</button>`).join('')}</div>${dataState('orders', { title: 'الطلبات', emptyTitle: 'لا توجد طلبات', emptyText: 'ستظهر الطلبات الجديدة هنا عند إنشائها.' }) || `<div class="orders-list">${rows.map((order) => orderCard(order, { action: 'open-admin-order', actionLabel: 'إدارة الطلب' })).join('') || '<section class="state-card state-empty"><h2>لا توجد نتائج بهذا الفلتر</h2><p>جرّب اختيار الكل.</p></section>'}</div>`}</main>`;
-  }
-
-  function renderAdminDrivers() {
-    const couriers = state.courierRows;
-    return `<main class="dashboard-main container"><div class="page-heading"><div><span class="section-kicker">فريق التوصيل</span><h1>المندوبون</h1><p>اعرض الاعتماد والتوفر وآخر نشاط لكل مندوب.</p></div><button class="secondary-button" data-action="load-admin-data">تحديث</button></div>${couriers.length ? `<div class="people-grid">${couriers.map((courier) => `<article class="person-card"><div class="person-avatar">${escapeHTML(initials(courier.full_name))}</div><div><h3>${escapeHTML(courier.full_name || 'مندوب')}</h3><p>${escapeHTML(courier.phone || 'بدون رقم')}</p><span class="status ${courier.approved === false ? 'new' : courier.available ? 'success' : 'neutral'}">${courier.approved === false ? 'بانتظار الموافقة' : courier.available ? 'متاح' : 'غير متاح'}</span></div><button class="secondary-button small-button" data-action="toggle-driver-approval" data-driver-id="${escapeHTML(courier.id)}" data-approved="${courier.approved === false ? 'false' : 'true'}">${courier.approved === false ? 'اعتماد' : 'تفاصيل'}</button></article>`).join('')}</div>` : '<section class="state-card state-empty"><h2>لا توجد بيانات مندوبين</h2><p>اضغط تحديث أو تأكد من وجود حسابات مندوبين معتمدة.</p></section>'}</main>`;
-  }
-
-  function renderAdminShops() {
-    return `<main class="dashboard-main container"><div class="page-heading"><div><span class="section-kicker">المحلات والأصناف</span><h1>الأسعار والتغطية</h1><p>راجع رسوم التوصيل والأصناف المتاحة أمام العملاء.</p></div><button class="secondary-button" data-action="load-catalog">تحديث</button></div>${state.merchants.length ? `<div class="shops-table-wrap"><table class="data-table"><thead><tr><th>المحل</th><th>القسم</th><th>الأصناف</th><th>التوصيل</th><th>الحالة</th><th></th></tr></thead><tbody>${state.merchants.map((merchant) => `<tr><td><strong>${escapeHTML(merchant.name)}</strong><small>${escapeHTML(merchant.address_text || '')}</small></td><td>${escapeHTML(merchant.category)}</td><td>${state.products.filter((product) => String(product.merchant_id) === String(merchant.id)).length}</td><td>${money(merchant.delivery_value)}</td><td>${merchant.active ? '<span class="status success">نشط</span>' : '<span class="status danger">متوقف</span>'}</td><td><button class="link-button" data-action="edit-merchant" data-merchant-id="${escapeHTML(merchant.id)}">تعديل الرسوم</button></td></tr>`).join('')}</tbody></table></div>` : '<section class="state-card state-empty"><h2>لا توجد محلات</h2><p>أضف أول محل من قاعدة البيانات ليظهر هنا.</p></section>'}</main>`;
-  }
-
-  function renderAdminNotifications() {
-    return renderNotifications();
+  function authModalLegacy() {
+    const mode = state.authMode;
+    const title = mode === 'signup' ? 'ابدأ أول مشوار' : mode === 'forgot' ? 'استرجاع كلمة المرور' : 'أهلاً بك في مشاوير';
+    const subtitle = mode === 'signup' ? 'حسابك يفتح في دقيقة، وبدون رسائل أو أكواد.' : mode === 'forgot' ? 'استخدم رقم الهاتف وPIN الاسترجاع الذي اخترته عند التسجيل.' : 'سجل دخولك وتابع طلبك حتى بابك.';
+    return `<div class="modal-head"><div><h2>${title}</h2><p>${subtitle}</p></div><button class="close-button" data-action="close-modal">×</button></div><div class="modal-body">${mode !== 'forgot' ? `<div class="auth-tabs"><button class="${mode === 'login' ? 'active' : ''}" data-action="auth-mode" data-mode="login">تسجيل الدخول</button><button class="${mode === 'signup' ? 'active' : ''}" data-action="auth-mode" data-mode="signup">حساب جديد</button></div>` : ''}<form id="auth-form" class="form-grid"><input type="hidden" name="mode" value="${mode}" />${mode === 'signup' ? `<div class="field"><label>الاسم بالكامل</label><input name="full_name" required autocomplete="name" placeholder="مثال: أحمد محمد" /></div>` : ''}<div class="field"><label>رقم الهاتف</label><input name="phone" required inputmode="tel" autocomplete="tel" placeholder="01xxxxxxxxx" /></div>${mode !== 'forgot' ? `<div class="field"><label>كلمة المرور</label><div class="password-row"><input name="password" type="password" required minlength="6" autocomplete="${mode === 'signup' ? 'new-password' : 'current-password'}" placeholder="6 أحرف أو أكثر" /><button type="button" class="password-toggle" data-action="toggle-password">◉</button></div></div>` : `<div class="field"><label>PIN الاسترجاع</label><input name="pin" required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="6 أرقام" /></div><div class="field"><label>كلمة المرور الجديدة</label><input name="password" type="password" required minlength="6" autocomplete="new-password" placeholder="كلمة مرور جديدة" /></div>`}${mode === 'signup' ? `<div class="field"><label>PIN الاسترجاع</label><input name="pin" required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="6 أرقام لا يعرفها أحد غيرك" /></div><div class="form-note">الـPIN ليس كودًا يُرسل إليك؛ هو مفتاح استرجاع تختاره وتحفظه لنفسك. لا تشاركه مع أي شخص.</div>` : ''}<button class="primary-button" type="submit">${mode === 'signup' ? 'إنشاء الحساب' : mode === 'forgot' ? 'تغيير كلمة المرور' : 'دخول آمن'}</button>${mode === 'login' ? '<button type="button" class="link-button" data-action="auth-mode" data-mode="forgot">نسيت كلمة المرور؟ استخدم PIN الاسترجاع</button>' : mode === 'forgot' ? '<button type="button" class="link-button" data-action="auth-mode" data-mode="login">العودة لتسجيل الدخول</button>' : ''}<div class="form-note">للتجربة الآن: يمكنك استعراض واجهات المستخدم والمندوب والإدارة من زر التجربة أسفل الصفحة.</div></form></div>`;
   }
 
   function authModal() {
     const mode = state.authMode;
-    const role = state.authRole;
-    const title = mode === 'signup' ? (role === 'courier' ? 'انضم كمندوب' : 'ابدأ أول مشوار') : mode === 'forgot' ? 'استرجاع كلمة المرور' : `دخول ${roleName(role)}`;
-    const subtitle = mode === 'signup' ? 'سجّل بياناتك للانضمام إلى مشاوير.' : mode === 'forgot' ? 'استخدم رقم الهاتف وPIN الاسترجاع.' : 'أدخل بياناتك للوصول إلى مساحة حسابك.';
-    const roles = mode === 'signup' ? ['customer', 'courier'] : ['customer', 'courier', 'admin'];
-    return `<div class="modal-head"><div><h2>${title}</h2><p>${subtitle}</p></div><button class="close-button" data-action="close-modal">×</button></div><div class="modal-body">${mode !== 'forgot' ? `<div class="auth-tabs"><button class="${mode === 'login' ? 'active' : ''}" data-action="auth-mode" data-mode="login">تسجيل الدخول</button><button class="${mode === 'signup' ? 'active' : ''}" data-action="auth-mode" data-mode="signup">حساب جديد</button></div><div class="role-tabs">${roles.map((item) => `<button class="${role === item ? 'active' : ''}" data-action="auth-role" data-role="${item}">${escapeHTML(roleName(item))}</button>`).join('')}</div>` : ''}<form id="auth-form" class="form-grid"><input type="hidden" name="mode" value="${mode}" /><input type="hidden" name="role" value="${role}" />${mode === 'signup' ? '<div class="field"><label>الاسم بالكامل</label><input name="full_name" required autocomplete="name" placeholder="مثال: أحمد محمد" /></div>' : ''}<div class="field"><label>رقم الهاتف</label><input name="phone" required inputmode="tel" autocomplete="tel" placeholder="01xxxxxxxxx" /></div>${mode === 'forgot' ? '<div class="field"><label>PIN الاسترجاع</label><input name="pin" required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" /></div>' : ''}<div class="field"><label>${mode === 'forgot' ? 'كلمة المرور الجديدة' : 'كلمة المرور'}</label><input name="password" type="password" required minlength="6" autocomplete="${mode === 'signup' ? 'new-password' : 'current-password'}" placeholder="6 أحرف أو أرقام على الأقل" /></div>${mode === 'signup' ? '<div class="field"><label>PIN الاسترجاع</label><input name="pin" required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="6 أرقام" /></div><div class="form-note">احفظ PIN في مكان آمن؛ سيُستخدم لاسترجاع الحساب.</div>' : ''}<button class="primary-button" type="submit" ${state.busy ? 'disabled' : ''}>${state.busy ? 'جارٍ التنفيذ...' : mode === 'signup' ? 'إنشاء الحساب' : mode === 'forgot' ? 'تغيير كلمة المرور' : 'تسجيل الدخول'}</button></form>${mode === 'login' ? '<button class="link-button auth-forgot" data-action="auth-mode" data-mode="forgot">نسيت كلمة المرور؟</button>' : ''}</div>`;
+    const roleLabel = roleName(state.authRole);
+    const title = mode === 'signup' ? (state.authRole === 'courier' ? 'انضم كمندوب' : 'ابدأ أول مشوار') : mode === 'forgot' ? 'استرجاع كلمة المرور' : `دخول ${roleLabel}`;
+    const subtitle = mode === 'signup' ? (state.authRole === 'courier' ? 'سجّل بياناتك للانضمام إلى فريق المندوبين.' : 'حسابك يفتح في دقيقة، وبدون رسائل أو أكواد.') : mode === 'forgot' ? 'استخدم رقم الهاتف وPIN الاسترجاع الذي اخترته عند التسجيل.' : `سجّل دخولك إلى واجهة ${roleLabel}.`;
+    const roleTabs = mode !== 'forgot' ? `<div class="role-tabs">${(mode === 'login' ? loginRoles : signupRoles).map((role) => `<button class="${state.authRole === role ? 'active' : ''}" data-action="auth-role" data-role="${role}">${roleName(role)}</button>`).join('')}</div>` : '';
+    const courierNote = mode === 'signup' && state.authRole === 'courier' ? '<div class="form-note">حساب المندوب يبدأ بانتظار موافقة الإدارة قبل استقبال الطلبات.</div>' : '';
+    return `<div class="modal-head"><div><h2>${title}</h2><p>${subtitle}</p></div><button class="close-button" data-action="close-modal">×</button></div><div class="modal-body">${mode !== 'forgot' ? `<div class="auth-tabs"><button class="${mode === 'login' ? 'active' : ''}" data-action="auth-mode" data-mode="login">تسجيل الدخول</button><button class="${mode === 'signup' ? 'active' : ''}" data-action="auth-mode" data-mode="signup">حساب جديد</button></div>` : ''}${roleTabs}<form id="auth-form" class="form-grid"><input type="hidden" name="mode" value="${mode}" /><input type="hidden" name="role" value="${state.authRole}" />${mode === 'signup' ? `<div class="field"><label>الاسم بالكامل</label><input name="full_name" required autocomplete="name" placeholder="مثال: أحمد محمد" /></div>` : ''}<div class="field"><label>رقم الهاتف</label><input name="phone" required inputmode="tel" autocomplete="tel" placeholder="01xxxxxxxxx" /></div>${mode !== 'forgot' ? `<div class="field"><label>كلمة المرور</label><div class="password-row"><input name="password" type="password" required minlength="6" autocomplete="${mode === 'signup' ? 'new-password' : 'current-password'}" placeholder="6 أحرف أو أكثر" /><button type="button" class="password-toggle" data-action="toggle-password">◉</button></div></div>` : `<div class="field"><label>PIN الاسترجاع</label><input name="pin" required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="6 أرقام" /></div><div class="field"><label>كلمة المرور الجديدة</label><input name="password" type="password" required minlength="6" autocomplete="new-password" placeholder="كلمة مرور جديدة" /></div>`}${mode === 'signup' ? `<div class="field"><label>PIN الاسترجاع</label><input name="pin" required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="6 أرقام لا يعرفها أحد غيرك" /></div><div class="form-note">الـPIN ليس كودًا يُرسل إليك؛ هو مفتاح استرجاع تختاره وتحفظه لنفسك. لا تشاركه مع أي شخص.</div>${courierNote}` : ''}<button class="primary-button" type="submit">${mode === 'signup' ? (state.authRole === 'courier' ? 'إنشاء حساب مندوب' : 'إنشاء الحساب') : mode === 'forgot' ? 'تغيير كلمة المرور' : 'تسجيل الدخول'}</button></form>${mode !== 'forgot' ? `<button class="link-button auth-forgot" data-action="auth-mode" data-mode="forgot">نسيت كلمة المرور؟</button>` : `<button class="link-button auth-forgot" data-action="auth-mode" data-mode="login">العودة لتسجيل الدخول</button>`}</div>`;
   }
 
-  function trackingModal(order) {
-    const status = orderStatus(order);
-    const index = Math.max(0, STATUS_STEPS.indexOf(status));
-    return `<div class="modal-head"><div><span class="section-kicker">#${escapeHTML(String(order.id).slice(-8))}</span><h2>متابعة ${escapeHTML(order.merchant_name)}</h2><p>${escapeHTML(STATUS_LABELS[status])}</p></div><button class="close-button" data-action="close-modal">×</button></div><div class="modal-body tracking-body"><div class="tracking-summary"><strong>${money(order.total)}</strong><span>${escapeHTML(order.address)}</span></div><ol class="tracking-steps">${STATUS_STEPS.map((step, stepIndex) => `<li class="${stepIndex < index ? 'complete' : stepIndex === index ? 'current' : ''}"><span>${stepIndex < index ? '✓' : stepIndex + 1}</span><div><b>${escapeHTML(STATUS_LABELS[step])}</b>${stepIndex === index ? '<small>آخر تحديث من النظام</small>' : ''}</div></li>`).join('')}</ol><div class="tracking-actions">${!isTerminal(status) ? '<button class="secondary-button" data-action="refresh-orders">تحديث الحالة</button>' : ''}<button class="primary-button" data-action="close-modal">إغلاق</button></div></div>`;
+  function cartModal() {
+    const subtotal = cartSubtotal();
+    return `<div class="modal-head"><div><h2>راجع مشوارك</h2><p>${selectedMerchant() ? escapeHTML(selectedMerchant().name) : 'أضف أصنافًا من محل واحد لكل طلب.'}</p></div><button class="close-button" data-action="close-modal">×</button></div><div class="modal-body">${state.cart.length ? `<div>${state.cart.map(cartLine).join('')}</div><div class="form-grid" style="margin-top:16px"><div class="field"><label>عنوان التوصيل بالوصف</label><textarea name="address" id="address-input" placeholder="اسم الشارع، علامة مميزة، الدور...">${escapeHTML(state.checkoutAddress || '')}</textarea></div><div class="map-box"><span>📍 ${state.location ? 'تم تحديد موقعك على الخريطة' : 'أضف موقعك لمساعدة المندوب'}</span><button type="button" class="ghost-button small-button" data-action="locate">${state.location ? 'تحديث الموقع' : 'استخدم موقعي'}</button></div><div class="field"><label>رقم للتواصل عند الوصول</label><input id="checkout-phone" name="checkout_phone" inputmode="tel" value="${escapeHTML(state.user?.phone || '')}" placeholder="01xxxxxxxxx" /></div><div class="field"><label>طريقة الدفع أو التسوية</label><div class="payment-list"><label class="payment-option"><input type="radio" name="payment" value="paid_to_store" checked /><span>دفعت للمحل، والمطلوب توصيل فقط</span></label><label class="payment-option"><input type="radio" name="payment" value="vodafone_cash" /><span>Vodafone Cash</span></label><label class="payment-option"><input type="radio" name="payment" value="instapay" /><span>InstaPay</span></label><label class="payment-option"><input type="radio" name="payment" value="cash" /><span>الدفع عند الاستلام</span></label></div></div><div class="field"><label>رقم العملية، إن وجد</label><input id="payment-ref" placeholder="اختياري" /></div><div class="order-total"><span>الإجمالي التقريبي</span><span>${money(subtotal)} + ${money(cartFee())} توصيل = ${money(cartTotal())}</span></div><button class="primary-button" data-action="submit-order">تأكيد الطلب · ${money(cartTotal())}</button></div>` : '<div class="empty-state"><div style="font-size:46px">🛒</div><h3>السلة فاضية</h3><p>اختار طلبك الأول من المطاعم والمحلات.</p><button class="primary-button" data-action="close-modal">ابدأ التسوق</button></div>'}</div>`;
   }
 
-  function orderActionModal(order, role) {
-    const status = orderStatus(order);
-    const next = role === 'courier' ? ({ pending: ['driver_accepted', 'قبول المشوار'], confirmed: ['driver_accepted', 'قبول المشوار'], searching_driver: ['driver_accepted', 'قبول المشوار'], driver_accepted: ['heading_to_pickup', 'بدأت التوجه للاستلام'], heading_to_pickup: ['arrived_pickup', 'وصلت للاستلام'], arrived_pickup: ['picked_up', 'تم استلام الطلب'], picked_up: ['delivering', 'بدأ التوصيل'], delivering: ['arrived_destination', 'وصلت للعنوان'], arrived_destination: ['delivered', 'تأكيد التسليم'] }[status]) : null;
-    const adminAction = ['pending', 'confirmed', 'searching_driver'].includes(status) ? 'تعيين مندوب' : 'تحديث حالة';
-    return `<div class="modal-head"><div><span class="section-kicker">${role === 'courier' ? 'إدارة المشوار' : 'تشغيل الطلب'}</span><h2>#${escapeHTML(String(order.id).slice(-8))}</h2><p>${escapeHTML(order.merchant_name)} · ${escapeHTML(order.address)}</p></div><button class="close-button" data-action="close-modal">×</button></div><div class="modal-body"><div class="order-modal-summary"><div><span>الحالة الحالية</span>${statusBadge(status)}</div><strong>${money(order.total)}</strong></div><div class="order-lines">${order.items.length ? order.items.map((item) => `<div><span>${escapeHTML(item.name || item.product_name || 'صنف')} × ${escapeHTML(item.quantity || 1)}</span><strong>${money(Number(item.price || 0) * Number(item.quantity || 1))}</strong></div>`).join('') : '<p class="muted">تفاصيل الأصناف محفوظة داخل الطلب.</p>'}</div>${role === 'courier' && next ? `<button class="primary-button full-button" data-action="advance-order" data-order-id="${escapeHTML(order.id)}" data-next-status="${next[0]}">${escapeHTML(next[1])}</button>` : role === 'admin' ? `<button class="primary-button full-button" data-action="admin-order-action" data-order-id="${escapeHTML(order.id)}">${adminAction}</button>` : ''}${isTerminal(status) ? '<p class="form-note">هذا الطلب مغلق ولا يمكن تعديل حالته.</p>' : ''}</div>`;
+  function cartLine(line) {
+    return `<div class="cart-line"><div class="line-info"><strong>${escapeHTML(line.name)}</strong><span>${money(line.price)} · ${escapeHTML(line.merchantName)}</span></div><div class="quantity"><button data-action="cart-dec" data-product="${line.id}">−</button><b>${line.quantity}</b><button data-action="cart-inc" data-product="${line.id}">+</button></div></div>`;
   }
 
-  function renderModal() {
-    let content = '';
-    if (state.modal === 'auth') content = authModal();
-    if (state.modal === 'tracking' && state.trackingOrder) content = trackingModal(state.trackingOrder);
-    if (state.modal === 'driver-order' && state.trackingOrder) content = orderActionModal(state.trackingOrder, 'courier');
-    if (state.modal === 'admin-order' && state.trackingOrder) content = orderActionModal(state.trackingOrder, 'admin');
-    if (state.modal === 'admin-assign' && state.trackingOrder) content = adminAssignModal(state.trackingOrder);
-    if (state.modal === 'admin-advance' && state.trackingOrder) content = adminAdvanceModal(state.trackingOrder);
-    return content ? `<div class="modal-backdrop" data-action="backdrop"><section class="modal" role="dialog" aria-modal="true">${content}</section></div>` : '';
-  }
-
-  function routeContent(route) {
-    if (state.routeLoading.has(route)) return routeLoadingView(pageTitle());
-    if (state.routeErrors[route]) return `<main class="dashboard-main container"><section class="state-card state-error"><h2>تعذر فتح ${escapeHTML(pageTitle())}</h2><p>${escapeHTML(state.routeErrors[route])}</p><button class="primary-button small-button" data-action="retry-route" data-route="${escapeHTML(route)}">إعادة المحاولة</button></section></main>`;
-    const pages = {
-      'customer.home': renderCustomerHome,
-      'customer.orders': renderCustomerOrders,
-      'customer.cart': renderCustomerCart,
-      'customer.account': renderAccount,
-      'customer.notifications': renderNotifications,
-      'driver.home': renderDriverHome,
-      'driver.orders': renderDriverOrders,
-      'driver.earnings': renderDriverEarnings,
-      'driver.notifications': renderNotifications,
-      'admin.overview': renderAdminOverview,
-      'admin.orders': renderAdminOrders,
-      'admin.drivers': renderAdminDrivers,
-      'admin.shops': renderAdminShops,
-      'admin.notifications': renderAdminNotifications
-    };
-    return (pages[route] || (() => `<main class="dashboard-main container"><section class="state-card state-error"><h2>المسار غير معروف</h2><p>تعريف المسار غير متاح لهذا الإصدار.</p></section></main>`))();
-  }
-
-  function render() {
-    if (!state.user && !state.demo) {
-      app.innerHTML = renderLanding() + (state.modal ? renderModal() : '');
-      return;
+  async function loadProfile(user) {
+    if (!client || !user) return;
+    const { data } = await client.from('profiles').select('*').eq('id', user.id).maybeSingle();
+    state.profile = data || { full_name: user.user_metadata?.full_name || 'عميل مشاوير', role: user.user_metadata?.role || 'customer', approved: true };
+    state.view = state.profile.role === 'customer' ? 'customer' : state.profile.role;
+    state.route = routeForRole(state.profile.role);
+    const { data: orderData } = await client.from('orders').select('*').order('created_at', { ascending: false }).limit(10);
+    if (orderData) state.orders = orderData.map(mapOrder);
+    if (state.orders.length) {
+      await Promise.all(state.orders.filter((order) => order.courier_id).map(async (order) => {
+        const { data } = await client.rpc('order_courier_summary', { order_id_value: order.id });
+        if (data) order.courier = data;
+      }));
     }
-    if (!isRouteAllowed(state.route, currentRole())) state.route = routeForRole(currentRole());
-    app.innerHTML = renderShell(routeContent(state.route));
+    const { data: notificationData } = await client.from('notifications').select('*').is('read_at', null).order('created_at', { ascending: false }).limit(10);
+    if (notificationData) state.notifications = notificationData;
+    if (state.profile.role === 'admin') {
+      const { data: courierData } = await client.from('profiles').select('*').eq('role', 'courier').order('created_at', { ascending: false });
+      if (courierData) state.couriers = courierData;
+    }
   }
 
-  async function navigateRoute(route) {
-    if (!isRouteAllowed(route, currentRole())) {
-      showToast('هذه الوجهة غير متاحة لهذا الحساب.', true);
-      return;
+  async function loadCatalog() {
+    if (!client) return;
+    const { data: merchantData } = await client.from('merchants').select('*').eq('active', true).order('created_at');
+    const { data: productData } = await client.from('products').select('*').eq('available', true).order('created_at');
+    if (merchantData?.length) {
+      merchants = merchantData.map((merchant, index) => ({
+        ...merchant,
+        fee: Number(merchant.delivery_value || 18),
+        eta: '25 - 45 دقيقة',
+        color: ['linear-gradient(135deg,#e76f39,#9e3b31)', 'linear-gradient(135deg,#2d8a70,#1c5360)', 'linear-gradient(135deg,#3e8bc4,#3565a5)'][index % 3],
+        symbol: ['🍲', '🛒', '✚'][index % 3]
+      }));
     }
-    state.route = route;
+    if (productData?.length) {
+      products = productData.map((product, index) => ({ ...product, price: Number(product.price), emoji: ['🍗', '🥘', '🌯', '🥬', '💧', '🧺', '💊', '🩹'][index % 8] }));
+    }
+  }
+
+  function mapOrder(order) {
+    const merchant = merchantFor(order.merchant_id);
+    const status = orderLabels[order.status] ? order.status : (legacyStatuses[order.status] || 'pending');
+    return { ...order, status, merchant: merchant?.name || 'طلب مشاوير', statusText: orderLabels[status], total: order.total || 0, address: order.address_text || '' };
+  }
+
+  async function completeAuth(user) {
+    state.user = user;
+    await loadProfile(user);
+    if (client && !state.liveChannel) {
+      state.liveChannel = client.channel('mashwer-orders-live').on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, async () => {
+        await loadProfile(state.user);
+        render();
+      }).subscribe();
+    }
+    if (client && !state.refreshTimer) {
+      state.refreshTimer = window.setInterval(async () => {
+        if (!state.user || state.user.demo || state.modal) return;
+        await loadProfile(state.user);
+        render();
+      }, 10000);
+    }
     state.modal = null;
-    state.routeErrors[route] = null;
-    // The page renderers are bundled in this file. Do not block navigation on optional route metadata.
-    render();
-    if (!state.routeReady.has(route)) {
-      state.routeReady.add(route);
-      void loadRoute(route).catch((error) => {
-        // Route modules only validate metadata; the bundled page remains usable if one is unavailable.
-        console.warn(`[Mashwer] optional route metadata unavailable for ${route}`, error);
-      });
-    }
-    if (route.includes('notifications')) void loadNotifications();
-    if (route.includes('orders') || route.endsWith('overview')) void loadOrders();
-    if (route === 'admin.drivers') void loadAdminData().then(render);
-  }
-
-  async function loadAdminData() {
-    if (currentRole() !== 'admin') return;
-    if (isDemo()) {
-      state.courierRows = [{ id: 'demo-driver-1', full_name: 'ياسر محمد', phone: '010•••8421', approved: true, available: true }, { id: 'demo-driver-2', full_name: 'كريم السيد', phone: '011•••1904', approved: false, available: false }];
-      return;
-    }
-    try {
-      const result = await client.from('profiles').select('id,full_name,phone,role,approved,available').eq('role', 'courier').order('full_name');
-      if (result.error) throw result.error;
-      state.courierRows = result.data || [];
-    } catch (error) {
-      showToast(reportError('admin data', error), true);
-    }
-  }
-
-  async function editMerchant(merchantId) {
-    const merchant = merchantFor(merchantId);
-    if (!merchant) return;
-    const value = window.prompt(`رسوم توصيل ${merchant.name} بالجنيه`, String(merchant.delivery_value));
-    if (value === null) return;
-    const fee = Number(value);
-    if (!Number.isFinite(fee) || fee < 0) return showToast('اكتب قيمة توصيل صحيحة.', true);
-    try {
-      if (isDemo()) merchant.delivery_value = fee;
-      else {
-        const result = await client.from('merchants').update({ delivery_value: fee }).eq('id', merchant.id);
-        if (result.error) throw result.error;
-        merchant.delivery_value = fee;
-      }
-      showToast('تم تحديث رسوم التوصيل.');
-      render();
-    } catch (error) {
-      showToast(reportError('update merchant', error), true);
-    }
-  }
-
-  async function toggleDriverApproval(driverId, approved) {
-    if (approved) return showToast('المندوب معتمد بالفعل.');
-    try {
-      if (isDemo()) {
-        const courier = state.courierRows.find((row) => String(row.id) === String(driverId));
-        if (courier) courier.approved = true;
-      } else {
-        const result = await client.from('profiles').update({ approved: true }).eq('id', driverId).eq('role', 'courier');
-        if (result.error) throw result.error;
-      }
-      await loadAdminData();
-      showToast('تم اعتماد حساب المندوب.');
-      render();
-    } catch (error) {
-      showToast(reportError('approve driver', error), true);
-    }
-  }
-
-  function enterDemo() {
-    stopRealtime();
-    state.demo = true;
-    state.user = { id: 'demo-user', user_metadata: { full_name: 'زائر مشاوير', role: 'customer', phone: 'غير مسجل' } };
-    state.profile = { id: 'demo-user', full_name: 'زائر مشاوير', role: 'customer', phone: 'غير مسجل', approved: true, available: false };
-    state.route = 'customer.home';
-    state.catalog.status = 'idle';
-    state.orders.status = 'idle';
-    state.notifications.status = 'idle';
-    loadCatalog();
-    loadOrders();
-    loadNotifications();
-    render();
-  }
-
-  async function signOut(callClient = true) {
-    stopRealtime();
-    if (callClient && client && !isDemo()) await client.auth.signOut();
-    state.user = null;
-    state.profile = null;
-    state.demo = false;
-    state.route = 'customer.home';
-    state.cart = [];
-    state.modal = null;
-    state.notificationRows = [];
-    state.orderRows = [];
     render();
   }
 
   async function submitAuth(form) {
-    if (!client) return showToast('الاتصال بقاعدة البيانات غير متاح.', true);
     const data = new FormData(form);
-    const mode = String(data.get('mode') || 'login');
+    const mode = String(data.get('mode'));
     const phone = normalizePhone(data.get('phone'));
     const password = String(data.get('password') || '');
     state.busy = true;
     render();
     try {
       if (mode === 'login') {
+        const expectedRole = String(data.get('role') || 'customer');
+        if (!loginRoles.includes(expectedRole)) throw new Error('نوع الدخول غير صحيح.');
+        if (!client) return demoLogin(expectedRole);
         const result = await client.auth.signInWithPassword({ email: authEmail(phone), password });
-        if (result.error) throw result.error;
-        if (!result.data.session) throw new Error('تعذر إنشاء جلسة الدخول.');
-        await openSession(result.data.session);
-        state.modal = null;
-        showToast('تم تسجيل الدخول.');
+        if (result.error) throw new Error(authErrorMessage(result.error));
+        await loadProfile(result.data.user);
+        const actualRole = currentRole();
+        if (actualRole !== expectedRole) {
+          await client.auth.signOut();
+          state.profile = null;
+          throw new Error(`هذا الحساب مسجل كـ${roleName(actualRole)}. اختر واجهة الدخول المناسبة.`);
+        }
+        await completeAuth(result.data.user);
+        showToast('تم تسجيل الدخول، أهلاً بك في مشاوير.');
       } else if (mode === 'signup') {
-        const role = String(data.get('role') || 'customer');
         const fullName = String(data.get('full_name') || '').trim();
         const pin = String(data.get('pin') || '');
+        const requestedRole = String(data.get('role') || 'customer');
+        if (!/^\+20\d{10}$/.test(phone)) throw new Error('اكتب رقم هاتف مصري صحيحًا مثل 01012345678.');
+        if (password.length < 6) throw new Error('كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل.');
         if (!/^\d{6}$/.test(pin)) throw new Error('PIN الاسترجاع يجب أن يكون 6 أرقام.');
-        const result = await client.auth.signUp({ email: authEmail(phone), password, options: { data: { full_name: fullName, phone, role } } });
-        if (result.error) throw result.error;
-        if (!result.data.session) {
-          state.modal = null;
-          showToast('تم إنشاء الحساب. أكمل تفعيل البريد ثم سجّل الدخول.');
-        } else {
-          const pinResult = await client.rpc('set_pin', { pin_value: pin });
-          if (pinResult.error || pinResult.data?.ok === false) throw new Error(pinResult.error?.message || pinResult.data?.error || 'تعذر حفظ PIN الاسترجاع.');
-          await openSession(result.data.session);
-          state.modal = null;
-          showToast('تم إنشاء الحساب.');
-        }
+        if (!['customer', 'courier'].includes(requestedRole)) throw new Error('إنشاء حساب المدير يتم من الإدارة فقط.');
+        if (!client) return demoLogin(requestedRole, fullName || 'عميل مشاوير');
+        const result = await client.auth.signUp({ email: authEmail(phone), password, options: { data: { full_name: fullName, phone, role: requestedRole } } });
+        if (result.error) throw new Error(authErrorMessage(result.error));
+        if (!result.data.session) throw new Error('تعذر فتح الحساب تلقائيًا. تأكد من إيقاف تأكيد البريد في Supabase.');
+        const pinResult = await client.rpc('set_pin', { pin_value: pin });
+        if (pinResult.error) throw new Error(`تم إنشاء الحساب، لكن تعذر حفظ PIN الاسترجاع: ${authErrorMessage(pinResult.error)}`);
+        await completeAuth(result.data.user);
+        showToast('تم إنشاء حسابك بنجاح.');
       } else {
         const pin = String(data.get('pin') || '');
         if (!/^\d{6}$/.test(pin)) throw new Error('اكتب PIN صحيحًا من 6 أرقام.');
+        if (!client) throw new Error('وضع التجربة لا ينفذ استعادة حقيقية.');
         const result = await client.rpc('recover_password', { phone_value: phone, pin_value: pin, new_password: password });
-        if (result.error) throw result.error;
-        if (result.data?.ok === false) throw new Error(result.data.error || 'تعذر استرجاع الحساب.');
+        if (result.error || !result.data?.ok) throw new Error(result.error?.message || result.data?.error || 'تعذر الاسترجاع.');
         state.authMode = 'login';
-        showToast('تم تغيير كلمة المرور. سجّل الدخول الآن.');
+        render();
+        showToast('تم تغيير كلمة المرور. سجل دخولك الآن.');
       }
     } catch (error) {
-      showToast(authErrorMessage(error), true);
+      showToast(error.message || 'حدث خطأ، حاول مرة أخرى.');
+      render();
     } finally {
       state.busy = false;
-      render();
     }
   }
 
-  async function submitCheckout(form) {
-    if (!state.cart.length) return showToast('السلة فارغة.', true);
-    const data = new FormData(form);
-    state.checkout = { address: String(data.get('address') || '').trim(), phone: String(data.get('phone') || '').trim(), payment: String(data.get('payment') || 'paid_to_store'), paymentReference: String(data.get('payment_reference') || '').trim(), notes: String(data.get('notes') || '').trim() };
-    if (!state.checkout.address || !state.checkout.phone) return showToast('العنوان ورقم التواصل مطلوبان.', true);
-    const merchant = merchantFor(state.cart[0].merchant_id);
-    state.busy = true;
+  function demoLogin(role = 'customer', name = '') {
+    state.user = { id: `demo-${role}`, phone: '+201000000000', demo: true, user_metadata: { full_name: name || (role === 'admin' ? 'مدير مشاوير' : role === 'courier' ? 'مندوب مشاوير' : 'عميل مشاوير'), role } };
+    state.profile = { full_name: state.user.user_metadata.full_name, role, approved: true };
+    state.view = role;
+    state.route = routeForRole(role);
+    state.modal = null;
+    state.busy = false;
     render();
-    try {
-      const items = state.cart.map((item) => ({ product_id: item.product_id, quantity: item.quantity }));
-      if (isDemo()) {
-        const subtotal = state.cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-        state.orderRows.unshift(normalizeOrder({ id: `DEMO-${Math.floor(1000 + Math.random() * 8999)}`, merchant_id: merchant.id, merchant_name: merchant.name, status: 'pending', total: subtotal + Number(merchant.delivery_value || 0), subtotal, delivery_fee: merchant.delivery_value, address: state.checkout.address, created_at: new Date().toISOString(), items }));
-        state.orders.status = 'success';
-      } else {
-        const result = await client.rpc('create_order', { merchant_id_value: merchant.id, items_value: items, payment_method_value: state.checkout.payment, payment_reference_value: state.checkout.paymentReference || null, address_text_value: state.checkout.address, contact_phone_value: state.checkout.phone, notes_value: state.checkout.notes || null });
-        if (result.error) throw result.error;
-        state.orderRows.unshift(normalizeOrder(result.data));
-        state.orders.status = 'success';
-      }
-      state.cart = [];
-      state.modal = null;
-      state.route = 'customer.orders';
-      showToast('تم إرسال الطلب بنجاح.');
-    } catch (error) {
-      showToast(reportError('create order', error), true);
-    } finally {
-      state.busy = false;
-      render();
-    }
-  }
-
-  async function updateProfile(form) {
-    const fullName = String(new FormData(form).get('full_name') || '').trim();
-    if (fullName.length < 2) return showToast('اكتب الاسم بالكامل.', true);
-    state.busy = true;
-    render();
-    try {
-      if (!isDemo()) {
-        const result = await client.rpc('update_profile', { full_name_value: fullName });
-        if (result.error) throw result.error;
-        state.profile = { ...state.profile, ...result.data };
-      } else state.profile = { ...state.profile, full_name: fullName };
-      showToast('تم حفظ البيانات.');
-    } catch (error) {
-      showToast(reportError('update profile', error), true);
-    } finally {
-      state.busy = false;
-      render();
-    }
+    showToast(`تم فتح واجهة ${roleName(role)} للتجربة.`);
   }
 
   function addToCart(productId) {
     const product = productFor(productId);
-    if (!product) return showToast('الصنف غير متاح الآن.', true);
-    if (state.cart.length && String(state.cart[0].merchant_id) !== String(product.merchant_id)) return showToast('السلة تدعم محلًا واحدًا في كل طلب. أفرغ السلة أولًا.', true);
-    const existing = state.cart.find((item) => String(item.product_id) === String(product.id));
-    if (existing) existing.quantity = Math.min(99, existing.quantity + 1);
-    else state.cart.push({ product_id: product.id, merchant_id: product.merchant_id, name: product.name, category: product.category, price: product.price, quantity: 1 });
+    if (!product) return;
+    if (state.selectedMerchant && state.selectedMerchant !== product.merchant_id) {
+      showToast('كل طلب من محل واحد. أكمل السلة الحالية أولاً.');
+      return;
+    }
     state.selectedMerchant = product.merchant_id;
+    const existing = state.cart.find((line) => line.id === product.id);
+    if (existing) existing.quantity += 1;
+    else state.cart.push({ ...product, quantity: 1, merchantName: merchantFor(product.merchant_id)?.name || 'محل' });
+    render();
     showToast(`تمت إضافة ${product.name} إلى السلة.`);
+  }
+
+  function changeCart(productId, delta) {
+    const line = state.cart.find((item) => item.id === productId);
+    if (!line) return;
+    line.quantity += delta;
+    if (line.quantity <= 0) state.cart = state.cart.filter((item) => item.id !== productId);
+    if (!state.cart.length) state.selectedMerchant = null;
     render();
+    if (state.modal === 'cart') state.modal = 'cart';
   }
 
-  function changeCartQuantity(productId, change) {
-    const item = state.cart.find((line) => String(line.product_id) === String(productId));
-    if (!item) return;
-    item.quantity += Number(change);
-    if (item.quantity <= 0) state.cart = state.cart.filter((line) => String(line.product_id) !== String(productId));
-    render();
-  }
-
-  function adminAssignModal(order) {
-    const eligible = state.courierRows.filter((courier) => courier.approved !== false);
-    return `<div class="modal-head"><div><span class="section-kicker">تعيين مشوار</span><h2>#${escapeHTML(String(order.id).slice(-8))}</h2><p>${escapeHTML(order.merchant_name)}</p></div><button class="close-button" data-action="close-modal">×</button></div><div class="modal-body"><div class="field"><label for="courier-select">اختر المندوب</label><select id="courier-select" name="courier_id">${eligible.map((courier) => `<option value="${escapeHTML(courier.id)}">${escapeHTML(courier.full_name)}${courier.available ? ' · متاح' : ''}</option>`).join('')}</select></div>${eligible.length ? `<button class="primary-button full-button" data-action="admin-assign" data-order-id="${escapeHTML(order.id)}">تعيين المندوب</button>` : '<section class="state-card state-empty"><h2>لا يوجد مندوب معتمد</h2><p>اعتمد حساب مندوب أولًا ثم أعد المحاولة.</p></section>'}</div>`;
-  }
-
-  function adminAdvanceModal(order) {
-    const choices = STATUS_STEPS.filter((status) => STATUS_STEPS.indexOf(status) > STATUS_STEPS.indexOf(orderStatus(order))).slice(0, 3);
-    return `<div class="modal-head"><div><span class="section-kicker">تحديث حالة الطلب</span><h2>#${escapeHTML(String(order.id).slice(-8))}</h2><p>${escapeHTML(order.merchant_name)}</p></div><button class="close-button" data-action="close-modal">×</button></div><div class="modal-body"><p class="muted">الحالة الحالية: ${escapeHTML(STATUS_LABELS[orderStatus(order)])}</p><div class="choice-list">${choices.map((status) => `<button class="secondary-button full-button" data-action="advance-order" data-order-id="${escapeHTML(order.id)}" data-next-status="${status}">${escapeHTML(STATUS_LABELS[status])}</button>`).join('') || '<p class="form-note">لا توجد حالة تالية متاحة.</p>'}</div></div>`;
-  }
-
-  async function advanceOrder(orderId, nextStatus) {
-    const order = state.orderRows.find((row) => String(row.id) === String(orderId));
-    if (!order) return;
-    state.busy = true;
-    render();
-    try {
-      if (isDemo()) {
-        order.status = nextStatus;
-      } else {
-        const result = await client.rpc('advance_order', { order_id_value: order.id, next_status_value: nextStatus, note_value: null, latitude_value: state.trackingLocation?.latitude || null, longitude_value: state.trackingLocation?.longitude || null });
-        if (result.error) throw result.error;
-        Object.assign(order, normalizeOrder(result.data));
-      }
-      state.trackingOrder = order;
-      state.modal = null;
-      showToast(`تم تحديث الطلب إلى: ${STATUS_LABELS[nextStatus]}`);
-      await loadOrders();
-    } catch (error) {
-      showToast(reportError('advance order', error), true);
-    } finally {
-      state.busy = false;
-      render();
-    }
-  }
-
-  async function assignOrder(orderId, courierId) {
-    if (!courierId) return showToast('اختر مندوبًا أولًا.', true);
-    state.busy = true;
-    render();
-    try {
-      if (isDemo()) {
-        const order = state.orderRows.find((row) => String(row.id) === String(orderId));
-        if (order) { order.courier_id = courierId; order.status = 'assigned'; }
-      } else {
-        const result = await client.rpc('assign_order', { order_id_value: orderId, courier_id_value: courierId });
-        if (result.error) throw result.error;
-      }
-      state.modal = null;
-      showToast('تم تعيين المندوب.');
-      await loadOrders();
-    } catch (error) {
-      showToast(reportError('assign order', error), true);
-    } finally {
-      state.busy = false;
-      render();
-    }
-  }
-
-  async function cancelOrder(orderId) {
-    if (!window.confirm('هل تريد إلغاء هذا الطلب؟')) return;
-    await advanceOrder(orderId, 'cancelled');
-  }
-
-  async function toggleAvailability() {
-    const next = state.profile?.available !== true;
-    try {
-      if (isDemo()) state.profile = { ...state.profile, available: next };
-      else {
-        const result = await client.rpc('set_driver_availability', { available_value: next });
-        if (result.error) throw result.error;
-        state.profile = { ...state.profile, ...result.data };
-      }
-      showToast(next ? 'أصبحت متاحًا لاستقبال المشاوير.' : 'تم إيقاف استقبال المشاوير.');
-      render();
-      await loadOrders();
-    } catch (error) {
-      showToast(reportError('availability', error), true);
-    }
-  }
-
-  async function markNotificationsRead() {
-    try {
-      if (isDemo()) state.notificationRows.forEach((notice) => { notice.read_at = notice.read_at || new Date().toISOString(); });
-      else {
-        const result = await client.from('notifications').update({ read_at: new Date().toISOString() }).eq('user_id', state.user.id).is('read_at', null);
-        if (result.error) throw result.error;
-        await loadNotifications();
-      }
-      showToast('تم تعليم الإشعارات كمقروءة.');
-      render();
-    } catch (error) {
-      showToast(reportError('read notifications', error), true);
-    }
-  }
-
-  async function requestLocation() {
-    if (!navigator.geolocation) return showToast('الموقع غير مدعوم على هذا الجهاز.', true);
+  async function getLocation() {
+    if (!navigator.geolocation) return showToast('المتصفح لا يدعم تحديد الموقع. استخدم وصف العنوان.');
+    showToast('جارٍ تحديد موقعك...');
     navigator.geolocation.getCurrentPosition((position) => {
-      state.trackingLocation = { latitude: position.coords.latitude, longitude: position.coords.longitude };
-      showToast('تم تحديث موقعك الحالي.');
+      state.location = { lat: position.coords.latitude, lng: position.coords.longitude };
       render();
-    }, () => showToast('لم نتمكن من قراءة موقعك. اسمح بالوصول للموقع ثم حاول.', true), { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
+      showToast('تم حفظ موقعك لمساعدة المندوب.');
+    }, () => showToast('لم نتمكن من تحديد الموقع. اكتب العنوان بالوصف.'));
   }
 
-  function openOrder(orderId, modal) {
-    const order = state.orderRows.find((row) => String(row.id) === String(orderId));
-    if (!order) return showToast('الطلب غير موجود في البيانات الحالية.', true);
-    state.trackingOrder = order;
-    state.modal = modal;
+  async function openTracking(orderId) {
+    state.trackingOrder = state.orders.find((order) => String(order.id) === String(orderId)) || state.orders[0];
+    state.trackingHistory = [];
+    state.modal = 'tracking';
+    render();
+    if (client && !isDemo() && state.trackingOrder?.id) {
+      const { data } = await client.from('order_status_history').select('*').eq('order_id', state.trackingOrder.id).order('changed_at', { ascending: true });
+      state.trackingHistory = data || [];
+      render();
+    }
+  }
+
+  async function submitOrder() {
+    const address = document.getElementById('address-input')?.value.trim();
+    const phone = document.getElementById('checkout-phone')?.value.trim();
+    const payment = document.querySelector('input[name="payment"]:checked')?.value || 'paid_to_store';
+    const paymentRef = document.getElementById('payment-ref')?.value.trim() || null;
+    if (!address) return showToast('اكتب عنوان التوصيل بالتفصيل.');
+    if (!phone) return showToast('اكتب رقمًا للتواصل عند الوصول.');
+    const payload = {
+      merchant_id: state.selectedMerchant,
+      items: state.cart.map((line) => ({ product_id: line.id, name: line.name, quantity: line.quantity, unit_price: line.price })),
+      subtotal: cartSubtotal(),
+      delivery_fee: cartFee(),
+      total: cartTotal(),
+      payment_method: payment,
+      payment_reference: paymentRef,
+      address_text: address,
+      contact_phone: normalizePhone(phone),
+      pickup_address_text: selectedMerchant()?.address || selectedMerchant()?.name || 'المحل المحدد',
+      latitude: state.location?.lat || null,
+      longitude: state.location?.lng || null,
+      status: 'pending'
+    };
+    if (isDemo() || !client) {
+      state.orders.unshift({ id: `MW-${1043 + state.orders.length}`, merchant: selectedMerchant()?.name || 'محل مشاوير', customer: state.profile?.full_name || 'عميل مشاوير', status: 'pending', statusText: orderLabels.pending, total: payload.total, address, payment: payment, created_at: 'الآن' });
+      finishOrder();
+      showToast('تم تسجيل الطلب، وستتابعه الإدارة حتى تعيين المندوب.');
+      return;
+    }
+    const { data, error } = await client.from('orders').insert({ ...payload, user_id: state.user.id, payment_status: payment === 'paid_to_store' ? 'not_required' : 'pending' }).select().single();
+    if (error) return showToast(error.message || 'تعذر تسجيل الطلب.');
+    state.orders.unshift(mapOrder(data));
+    finishOrder();
+    showToast('تم تسجيل الطلب بنجاح.');
+  }
+
+  function finishOrder() {
+    state.cart = [];
+    state.selectedMerchant = null;
+    state.location = null;
+    state.checkoutAddress = '';
+    state.modal = null;
     render();
   }
 
-  async function handleClick(event) {
+  async function advanceOrder(orderId, requestedStatus = null) {
+    const order = state.orders.find((item) => String(item.id) === String(orderId)) || state.orders[0];
+    if (!order) return;
+    const nextSteps = { assigned: 'driver_accepted', driver_accepted: 'heading_to_pickup', heading_to_pickup: 'arrived_pickup', arrived_pickup: 'picked_up', picked_up: 'delivering', delivering: 'arrived_destination', arrived_destination: 'delivered' };
+    const nextStatus = requestedStatus || nextSteps[canonicalStatus(order)];
+    if (!nextStatus) return showToast('لا توجد خطوة تالية لهذا الطلب.');
+    if (client && !isDemo() && order.id) {
+      const { data, error } = await client.rpc('advance_order', { order_id_value: order.id, next_status_value: nextStatus });
+      if (error) return showToast(error.message || 'تعذر تحديث حالة الطلب.');
+      Object.assign(order, mapOrder(Array.isArray(data) ? data[0] : data));
+    } else {
+      order.status = nextStatus;
+      order.statusText = orderLabels[nextStatus] || nextStatus;
+    }
+    render();
+    showToast(`تم تحديث الحالة إلى: ${orderLabels[nextStatus] || nextStatus}`);
+  }
+
+  function setRoleView(role) {
+    if (!state.user?.demo) return showToast('حسابك يفتح الواجهة الخاصة بدوره فقط.');
+    state.profile.role = role;
+    state.user.user_metadata.role = role;
+    state.view = role;
+    state.route = routeForRole(role);
+    render();
+  }
+
+  async function logout() {
+    if (client && !isDemo()) await client.auth.signOut();
+    if (client && state.liveChannel) { await client.removeChannel(state.liveChannel); state.liveChannel = null; }
+    if (state.refreshTimer) { window.clearInterval(state.refreshTimer); state.refreshTimer = null; }
+    state.user = null;
+    state.profile = null;
+    state.view = 'customer';
+    state.route = 'customer.home';
+    state.modal = null;
+    render();
+    showToast('تم تسجيل الخروج.');
+  }
+
+  function handleClick(event) {
     const target = event.target.closest('[data-action]');
     if (!target) return;
     const action = target.dataset.action;
     if (action === 'backdrop' && event.target !== target) return;
-    event.preventDefault();
-    if (action === 'open-auth') { state.modal = 'auth'; state.authMode = target.dataset.mode || 'login'; state.authRole = target.dataset.role || 'customer'; render(); return; }
-    if (action === 'skip-intro') { finishIntro(); return; }
-    if (action === 'enter-demo') { enterDemo(); return; }
+    if (action === 'open-auth') { state.modal = 'auth'; state.authMode = target.dataset.mode || 'login'; state.authRole = loginRoles.includes(target.dataset.role) ? target.dataset.role : 'customer'; render(); return; }
+    if (action === 'auth-mode') { state.modal = 'auth'; state.authMode = target.dataset.mode; if (state.authMode === 'signup' && state.authRole === 'admin') state.authRole = 'customer'; render(); return; }
+    if (action === 'auth-role') { state.authRole = target.dataset.role; render(); return; }
     if (action === 'close-modal' || action === 'backdrop') { state.modal = null; render(); return; }
-    if (action === 'auth-mode') { state.authMode = target.dataset.mode || 'login'; if (state.authMode === 'signup' && state.authRole === 'admin') state.authRole = 'customer'; render(); return; }
-    if (action === 'auth-role') { state.authRole = target.dataset.role || 'customer'; render(); return; }
-    if (action === 'navigate-route') { await navigateRoute(target.dataset.route); return; }
-    if (action === 'go-home') { await navigateRoute(routeForRole(currentRole())); return; }
-    if (action === 'set-category') { state.category = target.dataset.category || 'الكل'; state.selectedMerchant = null; render(); return; }
-    if (action === 'select-merchant') { state.selectedMerchant = target.dataset.merchantId; state.category = merchantFor(state.selectedMerchant)?.category || 'الكل'; window.scrollTo({ top: document.body.scrollHeight / 3, behavior: 'smooth' }); render(); return; }
-    if (action === 'add-to-cart') { addToCart(target.dataset.productId); return; }
-    if (action === 'cart-quantity') { changeCartQuantity(target.dataset.productId, Number(target.dataset.change || 0)); return; }
-    if (action === 'orders-filter') { state.ordersFilter = target.dataset.filter || 'all'; render(); return; }
-    if (action === 'track-order') { openOrder(target.dataset.orderId, 'tracking'); return; }
-    if (action === 'open-driver-order') { openOrder(target.dataset.orderId, 'driver-order'); return; }
-    if (action === 'open-admin-order') { openOrder(target.dataset.orderId, 'admin-order'); return; }
-    if (action === 'cancel-order') { await cancelOrder(target.dataset.orderId); return; }
-    if (action === 'advance-order') { await advanceOrder(target.dataset.orderId, target.dataset.nextStatus); return; }
-    if (action === 'admin-order-action') { if (state.trackingOrder && ['pending', 'confirmed', 'searching_driver'].includes(orderStatus(state.trackingOrder))) { await loadAdminData(); state.modal = 'admin-assign'; } else state.modal = 'admin-advance'; render(); return; }
-    if (action === 'admin-assign') { await assignOrder(target.dataset.orderId, document.getElementById('courier-select')?.value); return; }
-    if (action === 'toggle-availability') { await toggleAvailability(); return; }
-    if (action === 'mark-notifications-read') { await markNotificationsRead(); return; }
-    if (action === 'refresh-orders' || action === 'retry-data') { await loadOrders(); return; }
-    if (action === 'load-catalog') { await loadCatalog(); return; }
-    if (action === 'load-admin-data') { await loadAdminData(); render(); return; }
-    if (action === 'edit-merchant') { await editMerchant(target.dataset.merchantId); return; }
-    if (action === 'toggle-driver-approval') { await toggleDriverApproval(target.dataset.driverId, target.dataset.approved === 'true'); return; }
-    if (action === 'retry-route') { state.routeReady.delete(target.dataset.route); await navigateRoute(target.dataset.route); return; }
-    if (action === 'logout') { await signOut(); return; }
-    if (action === 'request-location') { requestLocation(); return; }
-  }
-
-  function handleInput(event) {
-    const input = event.target;
-    if (input.dataset.input === 'catalog-search') state.search = input.value;
-  }
-
-  function handleChange(event) {
-    if (event.target.name === 'payment') {
-      state.checkout.payment = event.target.value;
-      render();
+    if (action === 'toggle-password') { const input = target.closest('.password-row')?.querySelector('input'); if (input) input.type = input.type === 'password' ? 'text' : 'password'; return; }
+    if (action === 'go-home') { event.preventDefault(); state.selectedMerchant = null; state.selectedCategory = 'الكل'; render(); return; }
+    if (action === 'choose-merchant') { state.selectedMerchant = target.dataset.merchant; state.selectedCategory = 'الكل'; render(); document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' }); return; }
+    if (action === 'clear-merchant') { state.selectedMerchant = null; render(); return; }
+    if (action === 'category') { state.selectedCategory = target.dataset.category; if (state.selectedCategory !== 'الكل') state.selectedMerchant = null; render(); return; }
+    if (action === 'scroll-products') { document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' }); return; }
+    if (action === 'add-cart') { addToCart(target.dataset.product); return; }
+    if (action === 'open-cart') { state.modal = 'cart'; render(); return; }
+    if (action === 'open-orders') { document.getElementById('orders')?.scrollIntoView({ behavior: 'smooth' }); return; }
+    if (action === 'track-order') { openTracking(target.dataset.orderId); return; }
+    if (action === 'cart-inc') { changeCart(target.dataset.product, 1); return; }
+    if (action === 'cart-dec') { changeCart(target.dataset.product, -1); return; }
+    if (action === 'locate') { getLocation(); return; }
+    if (action === 'use-account-phone') {
+      const phone = state.profile?.phone || state.user?.user_metadata?.phone || state.user?.phone || '';
+      const input = document.getElementById('checkout-phone');
+      if (phone && input) {
+        input.value = phone;
+        showToast('تم استخدام رقم الهاتف المحفوظ في الحساب.');
+      } else showToast('لا يوجد رقم محفوظ في الحساب. اكتب رقم التواصل يدويًا.');
+      return;
     }
+    if (action === 'submit-order') { submitOrder(); return; }
+    if (action === 'logout') { logout(); return; }
+    if (action === 'switch-demo') { setRoleView(target.dataset.view); return; }
+    if (action === 'navigate-route') { navigateRoute(target.dataset.route); return; }
+    if (action === 'dashboard-tab') { state.adminTab = target.dataset.tab; render(); return; }
+    if (action === 'toggle-online') { state.courierOnline = !state.courierOnline; render(); showToast(state.courierOnline ? 'أصبحت متاحًا لاستقبال الطلبات.' : 'تم إيقاف استقبال الطلبات.'); return; }
+    if (action === 'advance-order') { advanceOrder(target.dataset.orderId, target.dataset.nextStatus || null); return; }
+    if (action === 'reject-order') { advanceOrder(target.dataset.orderId, 'rejected'); return; }
+    if (action === 'cancel-order') { advanceOrder(target.dataset.orderId, 'cancelled'); return; }
+    if (action === 'approve-courier') {
+      if (client && !isDemo() && target.dataset.courierId) {
+        client.from('profiles').update({ approved: true }).eq('id', target.dataset.courierId).then(({ error }) => {
+          if (error) return showToast('تعذر اعتماد المندوب.');
+          loadProfile(state.user).then(() => { render(); showToast(`تم اعتماد ${target.dataset.courier}.`); });
+        });
+      } else showToast(`تم فتح ملف ${target.dataset.courier} للمراجعة.`);
+      return;
+    }
+    if (action === 'show-notice') { showToast(target.dataset.message || state.notifications[0]?.body || 'لا توجد إشعارات جديدة.'); return; }
   }
 
-  async function handleSubmit(event) {
-    const form = event.target;
-    if (form.id === 'auth-form') { event.preventDefault(); await submitAuth(form); return; }
-    if (form.id === 'checkout-form') { event.preventDefault(); await submitCheckout(form); return; }
-    if (form.id === 'profile-form') { event.preventDefault(); await updateProfile(form); }
+  function handleSubmit(event) {
+    if (event.target.id !== 'auth-form') return;
+    event.preventDefault();
+    submitAuth(event.target);
   }
 
-  document.addEventListener('click', handleClick);
-  document.addEventListener('input', handleInput);
-  document.addEventListener('change', handleChange);
-  document.addEventListener('submit', handleSubmit);
-  window.addEventListener('online', () => { state.offline = false; showToast('عاد الاتصال بالإنترنت.'); render(); });
-  window.addEventListener('offline', () => { state.offline = true; showToast('انقطع الاتصال.'); render(); });
-  window.addEventListener('keydown', (event) => { if (event.key === 'Escape' && state.modal) { state.modal = null; render(); } });
+  function brand() {
+    return `<a class="brand" href="#" data-action="go-home"><img class="brand-mark" src="logo-official-transparent.png" alt="" /><span>مشاوير<small>دائمًا سابقين بخطوة</small></span></a>`;
+  }
 
-  startIntro();
-  bootstrap();
+  function landingView() {
+    const entries = [
+      ['customer', 'تطبيق العميل', 'اطلب من محلات قريتك وتابع مشوارك حتى بابك.', 'ابدأ كعميل', 'signup'],
+      ['courier', 'تطبيق المندوب', 'استقبل الطلبات، ابدأ الطريق، وسلّم الشحنة بسهولة.', 'دخول المندوب', 'login'],
+      ['admin', 'لوحة تحكم المكتب', 'تابع الطلبات والعملاء والمندوبين والأسعار من مكان واحد.', 'دخول الإدارة', 'login']
+    ];
+    return `<div class="landing-view"><header class="landing-header container">${brand()}<button class="ghost-button" data-action="open-auth" data-mode="login" data-role="customer">تسجيل الدخول</button></header><main class="landing-main container"><section class="landing-hero"><div class="landing-copy"><span class="landing-kicker">مشاوير · توصيل محلي</span><h1>من قلب قريتك،<br /><em>يوصلك أسرع.</em></h1><p>مطاعم، بقالة، صيدلية وطرود. مشوارك واضح من لحظة الطلب حتى التسليم.</p><div class="landing-actions"><button class="primary-button" data-action="open-auth" data-mode="signup" data-role="customer">إنشاء حساب عميل</button><button class="light-button" data-action="open-auth" data-mode="login" data-role="courier">أنا مندوب</button></div></div><div class="landing-mark"><div class="mark-swoosh"></div><img src="logo-official-transparent.png" alt="مشاوير" /><strong>مشاوير</strong><span>دائمًا سابقين بخطوة</span></div></section><section class="entry-section"><div class="section-heading"><div><span class="section-kicker">اختار طريقك</span><h2>كل دور له تجربته</h2></div><span class="section-hint">دخول آمن حسب نوع الحساب</span></div><div class="entry-grid">${entries.map(([role, title, desc, label, mode]) => `<article class="entry-card entry-${role}"><div class="entry-icon">${role === 'customer' ? '⌂' : role === 'courier' ? '➤' : '▦'}</div><h3>${title}</h3><p>${desc}</p><button class="entry-button" data-action="open-auth" data-mode="${mode}" data-role="${role}">${label} <span>←</span></button></article>`).join('')}</div></section><section class="trust-strip"><span>✓ أسعار واضحة</span><span>✓ متابعة مباشرة</span><span>✓ محلات قريبة منك</span><span>✓ دفع يناسبك</span></section></main></div>`;
+  }
+
+  function customerView() {
+    const name = state.profile?.full_name || state.user?.user_metadata?.full_name || 'يا صديقي';
+    const filtered = products.filter((product) => (state.selectedCategory === 'الكل' || product.category === state.selectedCategory) && (!state.selectedMerchant || product.merchant_id === state.selectedMerchant));
+    const latest = state.orders.slice(0, 2);
+    return `<div class="customer-app"><header class="app-header container"><div class="header-location"><span class="location-pin">●</span><div><small>توصيل إلى</small><strong>عنوانك الحالي</strong></div></div><div class="header-actions"><button class="icon-button" data-action="show-notice" data-message="لا توجد إشعارات جديدة." title="الإشعارات">♧</button><button class="avatar" data-action="logout" title="تسجيل الخروج">${escapeHTML(initials(name))}</button></div></header><main class="customer-main container"><section class="customer-welcome"><div><span class="section-kicker">أهلاً ${escapeHTML(name.split(' ')[0])}</span><h1>جاهز لمشوار<br /><em>يوصلك أسرع.</em></h1><p>اختار طلبك، وإحنا نكمل الطريق.</p></div><div class="welcome-scooter">➤</div></section><section class="service-grid">${[['مطاعم','🍽'],['بقالة','🛒'],['صيدلية','◉'],['طرود','▣']].map(([label,icon]) => `<button class="service-tile" data-action="category" data-category="${label}"><span>${icon}</span><b>${label}</b></button>`).join('')}</section><section class="promo-strip app-promo"><div><b>مشوارك دايمًا سابقين بخطوة</b><span>تابع كل مرحلة من الطلب حتى بابك.</span></div><strong>★</strong></section><section class="app-section"><div class="section-heading"><div><span class="section-kicker">اختيارات قريبة</span><h2>محلات قريتك</h2></div><button class="link-button" data-action="category" data-category="الكل">عرض الكل ←</button></div><div class="merchant-grid">${merchants.map(merchantCard).join('')}</div></section><section id="products" class="app-section"><div class="section-heading"><div><span class="section-kicker">اطلب اللي تحتاجه</span><h2>${state.selectedMerchant ? escapeHTML(selectedMerchant().name) : 'الأكثر طلبًا'}</h2></div><button class="link-button" data-action="open-cart">السلة (${state.cart.reduce((s, item) => s + item.quantity, 0)})</button></div><div class="product-grid">${filtered.map(productCard).join('') || '<div class="empty-state">لا توجد أصناف في هذا القسم بعد.</div>'}</div></section><section id="orders" class="app-section"><div class="section-heading"><div><span class="section-kicker">لا تضيع مشوارك</span><h2>طلباتك الأخيرة</h2></div><button class="link-button" data-action="open-orders">كل الطلبات ←</button></div><div class="order-list">${latest.length ? latest.map((order) => `<button class="order-card" data-action="track-order" data-order-id="${escapeHTML(order.id || '')}"><span class="order-status-dot ${statusClass(order.statusText || 'جديد')}"></span><span class="order-card-main"><b>${escapeHTML(order.merchant || 'طلب مشاوير')}</b><small>${escapeHTML(order.address || 'العنوان غير محدد')} · ${escapeHTML(order.created_at || 'الآن')}</small></span><span class="order-card-side">${statusBadge(order.statusText || 'جديد')}<strong>${money(order.total)}</strong></span><span class="order-arrow">‹</span></button>`).join('') : '<div class="empty-state">أول مشوار مستنيك.</div>'}</div></section></main><nav class="app-bottom-nav"><button class="active" data-action="go-home"><b>⌂</b><span>الرئيسية</span></button><button data-action="open-orders"><b>◷</b><span>طلباتي</span></button><button data-action="open-cart"><b>🛒</b><span>السلة</span></button><button data-action="show-notice" data-message="الملف الشخصي جاهز."><b>♙</b><span>حسابي</span></button></nav></div>`;
+  }
+
+  function dashboardView() {
+    const admin = currentRole() === 'admin';
+    return `<div class="role-dashboard ${admin ? 'admin-dashboard' : 'courier-dashboard'}"><header class="app-header container"><div>${brand()}</div><div class="header-actions"><span class="role-pill">${admin ? 'لوحة المكتب' : 'تطبيق المندوب'}</span><button class="avatar" data-action="logout">↪</button></div></header><main class="dashboard-main container">${dashboardTop()}${admin ? adminView() : courierView()}</main><nav class="app-bottom-nav dashboard-bottom">${admin ? '<button class="active" data-action="dashboard-tab" data-tab="overview"><b>▦</b><span>الرئيسية</span></button><button data-action="dashboard-tab" data-tab="orders"><b>▤</b><span>الطلبات</span></button><button data-action="dashboard-tab" data-tab="couriers"><b>♙</b><span>المندوبون</span></button><button data-action="dashboard-tab" data-tab="shops"><b>⌁</b><span>الأسعار</span></button>' : '<button class="active" data-action="dashboard-tab" data-tab="overview"><b>⌂</b><span>الرئيسية</span></button><button data-action="dashboard-tab" data-tab="orders"><b>▤</b><span>طلباتي</span></button><button data-action="dashboard-tab" data-tab="earnings"><b>ج.م</b><span>حسابي</span></button>'}</nav></div>`;
+  }
+
+  function dashboardTop() {
+    const admin = currentRole() === 'admin';
+    const name = state.profile?.full_name || state.user?.user_metadata?.full_name || roleName(currentRole());
+    return `<section class="dashboard-heading"><div><span class="section-kicker">${admin ? 'صباح الخير' : 'جاهز للمشوار؟'}</span><h1>${admin ? 'لوحة تحكم مشاوير' : `أهلاً ${escapeHTML(name.split(' ')[0])}`}</h1><p>${admin ? 'كل حركة الطلبات والمندوبين أمامك.' : 'استقبل طلبات جديدة وابقَ سابقًا بخطوة.'}</p></div><span class="online-badge ${state.courierOnline ? 'online' : ''}">${admin ? 'متصل الآن' : state.courierOnline ? 'متاح للعمل' : 'غير متاح'}</span></section>`;
+  }
+
+  function courierView() {
+    if (!isDemo() && state.profile?.approved === false) return `<section class="pending-courier"><div class="pending-icon">➤</div><span class="section-kicker">تم استلام طلب التسجيل</span><h2>حسابك قيد مراجعة الإدارة</h2><p>بعد الموافقة ستظهر لك الطلبات الجديدة هنا، ويمكنك بدء المشوار وتحديث حالته.</p></section>`;
+    const assigned = state.orders.slice(0, 4);
+    const earnings = assigned.reduce((sum, order) => sum + Number(order.delivery_fee || 0), 0);
+    return `<section class="courier-summary"><div><span>حسابي اليوم</span><strong>${money(earnings)}</strong><small>${assigned.length} مشاوير مسندة إليك</small></div><button class="toggle ${state.courierOnline ? 'on' : ''}" data-action="toggle-online"><i></i></button></section><section class="route-card"><div class="panel-title"><div><span class="section-kicker">المشوار الحالي</span><h2>${assigned[0] ? 'طريقك إلى العميل' : 'لا توجد مشاوير الآن'}</h2></div><span class="route-time">${assigned[0] ? '12 دقيقة' : 'متاح'}</span></div><div class="route-map"><span class="map-road road-one"></span><span class="map-road road-two"></span><span class="map-road road-three"></span><span class="map-point start"></span><span class="map-point finish"></span><span class="map-scooter">➤</span></div>${assigned[0] ? `<div class="route-meta"><span>📍 ${escapeHTML(assigned[0].address || 'عنوان العميل')}</span><b>${money(assigned[0].total)}</b></div><button class="primary-button wide-button" data-action="track-order" data-order-id="${escapeHTML(assigned[0].id || '')}">عرض تفاصيل الطلب</button>` : '<div class="empty-state">ستظهر الطلبات الجديدة هنا.</div>'}</section><section class="app-section"><div class="section-heading"><div><span class="section-kicker">طلبات اليوم</span><h2>المشاوير المسندة</h2></div><span class="count-pill">${assigned.length}</span></div><div class="courier-order-list">${assigned.length ? assigned.map((order) => `<article class="courier-card"><div class="courier-card-top"><span class="order-number">#${escapeHTML(String(order.id || '').slice(-4) || '1258')}</span>${statusBadge(order.statusText || 'جديد')}</div><h3>${escapeHTML(order.merchant || 'طلب مشاوير')}</h3><p>📍 ${escapeHTML(order.address || 'العنوان غير محدد')}</p><div class="courier-card-bottom"><strong>${money(order.total)}</strong><button class="primary-button small-button" data-action="advance-order" data-order-id="${escapeHTML(order.id || '')}">تحديث الحالة</button></div></article>`).join('') : '<div class="empty-state">لا توجد طلبات مسندة إليك.</div>'}</div></section>`;
+  }
+
+  function adminView() {
+    const rows = state.orders.slice(0, 6);
+    const couriers = isDemo() ? demoCouriers : state.couriers;
+    const revenue = state.orders.reduce((sum, order) => sum + Number(order.delivery_fee || 0), 0);
+    return `<section class="dashboard-kpis"><div><span>طلبات اليوم</span><strong>${state.orders.length}</strong><small>+12% عن أمس</small></div><div><span>تم التسليم</span><strong>${state.orders.filter((o) => o.statusText === 'تم التسليم').length}</strong><small>بنجاح</small></div><div><span>قيد التنفيذ</span><strong>${state.orders.filter((o) => o.statusText !== 'تم التسليم').length}</strong><small>تحتاج متابعة</small></div><div><span>إجمالي التوصيل</span><strong>${money(revenue)}</strong><small>هذا الشهر</small></div></section><section class="admin-panel"><div class="panel-title"><div><span class="section-kicker">الحركة الآن</span><h2>إدارة الطلبات</h2></div><button class="link-button" data-action="show-notice" data-message="إضافة طلب يدوي ستكون متاحة قريبًا.">+ طلب جديد</button></div><div class="admin-order-list">${rows.length ? rows.map((order) => `<button class="admin-order-row" data-action="track-order" data-order-id="${escapeHTML(order.id || '')}"><span class="order-number">#${escapeHTML(String(order.id || '').slice(-4) || '1258')}</span><span><b>${escapeHTML(order.merchant || 'طلب مشاوير')}</b><small>${escapeHTML(order.customer || 'عميل')} · ${escapeHTML(order.address || 'العنوان')}</small></span>${statusBadge(order.statusText || 'جديد')}<strong>${money(order.total)}</strong></button>`).join('') : '<div class="empty-state">لا توجد طلبات حقيقية بعد.</div>'}</div></section><section class="admin-panel"><div class="panel-title"><div><span class="section-kicker">فريق التوصيل</span><h2>المندوبون</h2></div><span class="count-pill">${couriers.length}</span></div><div class="people-list">${couriers.slice(0, 5).map((courier) => `<div class="person-row"><span class="person-avatar">${escapeHTML(initials(courier.full_name || courier.name))}</span><span><b>${escapeHTML(courier.full_name || courier.name || 'مندوب')}</b><small>${escapeHTML(courier.phone || '')}</small></span><span class="person-state ${courier.approved === false ? 'pending' : ''}">${courier.approved === false ? 'بانتظار الموافقة' : 'متاح'}</span>${courier.approved === false ? `<button class="link-button" data-action="approve-courier" data-courier-id="${escapeHTML(courier.id || '')}" data-courier="${escapeHTML(courier.full_name || courier.name || 'مندوب')}">موافقة</button>` : ''}</div>`).join('') || '<div class="empty-state">لا يوجد مندوبون بعد.</div>'}</div></section>`;
+  }
+
+  function modalView() {
+    return `<div class="modal-backdrop" data-action="backdrop"><section class="modal ${state.modal === 'cart' ? 'modal-wide' : ''} ${state.modal === 'tracking' ? 'tracking-modal' : ''}" role="dialog" aria-modal="true">${state.modal === 'auth' ? authModal() : state.modal === 'cart' ? cartModal() : trackingModal()}</section></div>`;
+  }
+
+  function trackingModal() {
+    const order = state.trackingOrder || state.orders[0] || { id: 'MW-1258', merchant: 'طلب مشاوير', total: 80, address: 'العنوان غير محدد', statusText: 'جديد' };
+    const stages = ['تم استلام الطلب', 'قيد التجهيز', 'في الطريق', 'تم التسليم'];
+    const current = Math.max(0, stages.indexOf(order.statusText));
+    return `<div class="modal-head"><div><span class="section-kicker">تتبع الطلب</span><h2>#${escapeHTML(String(order.id || '').slice(-4) || '1258')}</h2><p>${escapeHTML(order.merchant || 'طلب مشاوير')} · ${money(order.total)}</p></div><button class="close-button" data-action="close-modal">×</button></div><div class="modal-body tracking-body"><div class="tracking-map"><span class="map-road road-one"></span><span class="map-road road-two"></span><span class="map-point start"></span><span class="map-point finish"></span><span class="map-scooter">➤</span></div><div class="tracking-address"><span>📍</span><div><b>التوصيل إلى</b><small>${escapeHTML(order.address || 'العنوان غير محدد')}</small></div></div><div class="timeline">${stages.map((stage, index) => `<div class="timeline-step ${index <= current ? 'done' : ''} ${index === current ? 'current' : ''}"><span></span><div><b>${stage}</b><small>${index <= current ? (index === current ? 'جاري الآن' : 'تم') : 'قريبًا'}</small></div></div>`).join('')}</div><button class="primary-button wide-button" data-action="close-modal">تم</button></div>`;
+  }
+
+  function cartModal() {
+    const subtotal = cartSubtotal();
+    const accountPhone = state.profile?.phone || state.user?.user_metadata?.phone || state.user?.phone || '';
+    if (!state.cart.length) return `<div class="modal-head"><div><h2>السلة فارغة</h2><p>أضف أصنافًا من المحلات أولًا.</p></div><button class="close-button" data-action="close-modal">×</button></div><div class="modal-body"><div class="empty-state">اختار طلبك، وإحنا نكمل الطريق.</div></div>`;
+    return `<div class="modal-head"><div><span class="section-kicker">مشوار جديد</span><h2>راجع طلبك</h2><p>${selectedMerchant() ? escapeHTML(selectedMerchant().name) : 'أضف أصنافًا من محل واحد لكل طلب.'}</p></div><button class="close-button" data-action="close-modal">×</button></div><div class="modal-body checkout-body"><div class="cart-lines">${state.cart.map(cartLine).join('')}</div><div class="form-grid checkout-fields"><div class="field"><label>عنوان التوصيل بالوصف</label><textarea name="address" id="address-input" placeholder="اسم الشارع، علامة مميزة، الدور...">${escapeHTML(state.checkoutAddress || '')}</textarea></div><div class="map-box"><span>📍 ${state.location ? 'تم تحديد موقعك على الخريطة' : 'أضف موقعك لمساعدة المندوب'}</span><button type="button" class="ghost-button small-button" data-action="locate">${state.location ? 'تحديث الموقع' : 'استخدم موقعي'}</button></div><div class="field"><label>رقم التواصل عند الوصول</label><div class="contact-phone-row"><input id="checkout-phone" name="checkout_phone" inputmode="tel" value="${escapeHTML(accountPhone)}" placeholder="01xxxxxxxxx" /><button type="button" class="ghost-button small-button" data-action="use-account-phone">استخدم رقم الحساب</button></div><span class="field-hint">يمكنك تغييره لأي رقم آخر قبل تأكيد الطلب.</span></div><div class="field"><label>طريقة الدفع أو التسوية</label><div class="payment-list"><label class="payment-option"><input type="radio" name="payment" value="paid_to_store" checked /><span>دفعت للمحل، والمطلوب توصيل فقط</span></label><label class="payment-option"><input type="radio" name="payment" value="vodafone_cash" /><span>Vodafone Cash</span></label><label class="payment-option"><input type="radio" name="payment" value="instapay" /><span>InstaPay</span></label><label class="payment-option"><input type="radio" name="payment" value="cash" /><span>الدفع عند الاستلام</span></label></div></div><div class="field"><label>رقم العملية، إن وجد</label><input id="payment-ref" placeholder="اختياري" /></div><div class="order-total"><span>الإجمالي التقريبي</span><span>${money(subtotal)} + ${money(cartFee())} توصيل = ${money(cartTotal())}</span></div><button class="primary-button wide-button" data-action="submit-order">تأكيد الطلب · ${money(cartTotal())}</button></div></div>`;
+  }
+
+  function orderStatusOptions(selected) {
+    return Object.entries(orderLabels).map(([value, label]) => `<option value="${value}" ${value === selected ? 'selected' : ''}>${label}</option>`).join('');
+  }
+
+  function courierActionButtons(order) {
+    const status = canonicalStatus(order);
+    if (status === 'assigned') return `<button class="primary-button small-button" data-action="advance-order" data-next-status="driver_accepted" data-order-id="${escapeHTML(order.id || '')}">قبول الطلب</button><button class="ghost-button small-button" data-action="reject-order" data-order-id="${escapeHTML(order.id || '')}">رفض</button>`;
+    const next = { driver_accepted: ['heading_to_pickup', 'اتجه للاستلام'], heading_to_pickup: ['arrived_pickup', 'وصلت للاستلام'], arrived_pickup: ['picked_up', 'استلمت الطلب'], picked_up: ['delivering', 'ابدأ التوصيل'], delivering: ['arrived_destination', 'وصلت للعميل'], arrived_destination: ['delivered', 'تأكيد التسليم'] }[status];
+    return next ? `<button class="primary-button small-button" data-action="advance-order" data-next-status="${next[0]}" data-order-id="${escapeHTML(order.id || '')}">${next[1]}</button>` : '';
+  }
+
+  function courierView() {
+    if (!isDemo() && state.profile?.approved === false) return `<section class="pending-courier"><div class="pending-icon">➤</div><span class="section-kicker">تم استلام طلب التسجيل</span><h2>حسابك قيد مراجعة الإدارة</h2><p>بعد الموافقة ستظهر لك الطلبات الجديدة هنا، ويمكنك بدء المشوار وتحديث حالته.</p></section>`;
+    const assigned = state.orders.filter((order) => !['delivered', 'cancelled', 'failed', 'rejected'].includes(canonicalStatus(order))).slice(0, 6);
+    const earnings = assigned.reduce((sum, order) => sum + Number(order.delivery_fee || 0), 0);
+    return `<section class="courier-summary"><div><span>حسابي اليوم</span><strong>${money(earnings)}</strong><small>${assigned.length} مشاوير مسندة إليك</small></div><button class="toggle ${state.courierOnline ? 'on' : ''}" data-action="toggle-online"><i></i></button></section><section class="route-card"><div class="panel-title"><div><span class="section-kicker">المشوار الحالي</span><h2>${assigned[0] ? 'طريقك إلى العميل' : 'لا توجد مشاوير الآن'}</h2></div><span class="route-time">${assigned[0] ? 'متابعة مباشرة' : 'متاح'}</span></div><div class="route-map"><span class="map-road road-one"></span><span class="map-road road-two"></span><span class="map-road road-three"></span><span class="map-point start"></span><span class="map-point finish"></span><span class="map-scooter">➤</span></div>${assigned[0] ? `<div class="route-meta"><span>📍 ${escapeHTML(assigned[0].address || 'عنوان العميل')}</span><b>${money(assigned[0].total)}</b></div>` : '<div class="empty-state">ستظهر الطلبات الجديدة هنا بعد إسنادها إليك.</div>'}</section><section class="app-section"><div class="section-heading"><div><span class="section-kicker">دورة التنفيذ</span><h2>طلباتك الحالية</h2></div><span class="count-pill">${assigned.length}</span></div><div class="courier-order-list">${assigned.length ? assigned.map((order) => `<article class="courier-card"><div class="courier-card-top"><span class="order-number">#${escapeHTML(String(order.id || '').slice(-4) || '1258')}</span>${statusBadge(order.statusText || order.status)}</div><h3>${escapeHTML(order.merchant || 'طلب مشاوير')}</h3><p>📍 ${escapeHTML(order.address || 'العنوان غير محدد')}</p><div class="courier-card-bottom"><strong>${money(order.total)}</strong><div class="order-actions">${courierActionButtons(order)}</div></div></article>`).join('') : '<div class="empty-state">لا توجد طلبات مسندة إليك.</div>'}</div></section>`;
+  }
+
+  function adminView() {
+    const rows = state.orders.slice(0, 10);
+    const couriers = isDemo() ? demoCouriers : state.couriers;
+    const revenue = state.orders.reduce((sum, order) => sum + Number(order.delivery_fee || 0), 0);
+    const approvedCouriers = couriers.filter((courier) => courier.approved !== false);
+    const courierOptions = (order) => `<select class="assign-select" data-action="assign-order" data-order-id="${escapeHTML(order.id || '')}" aria-label="توجيه الطلب"><option value="">غير موجّه</option>${approvedCouriers.map((courier) => `<option value="${escapeHTML(courier.id || '')}" ${String(order.courier_id || '') === String(courier.id || '') ? 'selected' : ''}>${escapeHTML(courier.full_name || courier.name || 'مندوب')}</option>`).join('')}</select>`;
+    return `<section class="dashboard-kpis"><div><span>كل الطلبات</span><strong>${state.orders.length}</strong><small>متزامنة مع النظام</small></div><div><span>بانتظار مندوب</span><strong>${state.orders.filter((o) => ['pending', 'confirmed', 'searching_driver'].includes(canonicalStatus(o))).length}</strong><small>تحتاج إسنادًا</small></div><div><span>قيد التنفيذ</span><strong>${state.orders.filter((o) => !['delivered', 'cancelled', 'failed'].includes(canonicalStatus(o))).length}</strong><small>متابعة مستمرة</small></div><div><span>إجمالي التوصيل</span><strong>${money(revenue)}</strong><small>هذا الشهر</small></div></section><section class="admin-panel"><div class="panel-title"><div><span class="section-kicker">المسار المركزي</span><h2>إدارة وتوجيه الطلبات</h2></div><span class="count-pill">${rows.length}</span></div><p class="panel-help">التعيين وتغيير الحالة يتمان بصلاحية الإدارة، ثم يصلان تلقائيًا للعميل والمندوب.</p><div class="admin-order-list">${rows.length ? rows.map((order) => `<div class="admin-order-row"><span class="order-number">#${escapeHTML(String(order.id || '').slice(-4) || '1258')}</span><span><b>${escapeHTML(order.merchant || 'طلب مشاوير')}</b><small>${escapeHTML(order.customer || 'العميل')} · ${escapeHTML(order.address || 'العنوان')}</small></span><select class="assign-select" data-action="change-order-status" data-order-id="${escapeHTML(order.id || '')}" aria-label="حالة الطلب">${orderStatusOptions(canonicalStatus(order))}</select><div class="admin-assignment">${courierOptions(order)}<button class="link-button" data-action="track-order" data-order-id="${escapeHTML(order.id || '')}">تفاصيل</button></div></div>`).join('') : '<div class="empty-state">لا توجد طلبات حقيقية بعد.</div>'}</div></section><section class="admin-panel"><div class="panel-title"><div><span class="section-kicker">فريق التوصيل</span><h2>المندوبون</h2></div><span class="count-pill">${couriers.length}</span></div><div class="people-list">${couriers.slice(0, 8).map((courier) => `<div class="person-row"><span class="person-avatar">${escapeHTML(initials(courier.full_name || courier.name))}</span><span><b>${escapeHTML(courier.full_name || courier.name || 'مندوب')}</b><small>${escapeHTML(courier.phone || '')}</small></span><span class="person-state ${courier.approved === false ? 'pending' : ''}">${courier.approved === false ? 'بانتظار الموافقة' : 'معتمد'}</span>${courier.approved === false ? `<button class="ghost-button small-button" data-action="approve-courier" data-courier-id="${escapeHTML(courier.id || '')}" data-courier="${escapeHTML(courier.full_name || courier.name || 'المندوب')}">موافقة</button>` : ''}</div>`).join('') || '<div class="empty-state">لا يوجد مندوبون مسجلون بعد.</div>'}</div></section>`;
+  }
+
+  function trackingModal() {
+    const order = state.trackingOrder || state.orders[0] || { id: 'MW-1258', merchant: 'طلب مشاوير', total: 80, address: 'العنوان غير محدد', status: 'pending' };
+    const stages = ['pending', 'confirmed', 'searching_driver', 'assigned', 'driver_accepted', 'heading_to_pickup', 'arrived_pickup', 'picked_up', 'delivering', 'arrived_destination', 'delivered'];
+    const current = Math.max(0, stages.indexOf(canonicalStatus(order)));
+    return `<div class="modal-head"><div><span class="section-kicker">تتبع الطلب</span><h2>#${escapeHTML(String(order.id || '').slice(-4) || '1258')}</h2><p>${escapeHTML(order.merchant || 'طلب مشاوير')} · ${money(order.total)}</p></div><button class="close-button" data-action="close-modal">×</button></div><div class="modal-body tracking-body"><div class="tracking-map"><span class="map-road road-one"></span><span class="map-road road-two"></span><span class="map-point start"></span><span class="map-point finish"></span><span class="map-scooter">➤</span></div><div class="tracking-address"><span>📍</span><div><b>التوصيل إلى</b><small>${escapeHTML(order.address || 'العنوان غير محدد')}</small></div></div><div class="timeline">${stages.map((stage, index) => `<div class="timeline-step ${index <= current ? 'done' : ''} ${index === current ? 'current' : ''}"><span></span><div><b>${orderLabels[stage]}</b><small>${index <= current ? (index === current ? 'جاري الآن' : 'تم') : 'قريبًا'}</small></div></div>`).join('')}</div><button class="primary-button wide-button" data-action="close-modal">تم</button></div>`;
+  }
+
+  function customerView() {
+    const name = state.profile?.full_name || state.user?.user_metadata?.full_name || 'يا صديقي';
+    const filtered = products.filter((product) => (state.selectedCategory === 'الكل' || product.category === state.selectedCategory) && (!state.selectedMerchant || product.merchant_id === state.selectedMerchant));
+    const orders = state.orders.slice(0, 3);
+    return `<div class="customer-app"><header class="app-header container"><div class="header-location"><span class="location-pin">●</span><div><small>توصيل إلى</small><strong>عنوانك الحالي</strong></div></div><div class="header-actions"><button class="icon-button" data-action="show-notice" data-message="${escapeHTML(state.notifications[0]?.body || 'لا توجد إشعارات جديدة.')}">♧${state.notifications.length ? `<sup>${state.notifications.length}</sup>` : ''}</button><button class="avatar" data-action="logout">${escapeHTML(initials(name))}</button></div></header><main class="customer-main container"><section class="customer-welcome"><div><span class="section-kicker">أهلاً ${escapeHTML(name.split(' ')[0])}</span><h1>جاهز لمشوار<br /><em>يوصلك أسرع.</em></h1><p>اختار طلبك، وإحنا نكمل الطريق.</p></div><div class="welcome-scooter">➤</div></section><section class="service-grid">${[['مطاعم','🍽'],['بقالة','🛒'],['صيدلية','◉'],['طرود','▣']].map(([label, icon]) => `<button class="service-tile" data-action="category" data-category="${label}"><span>${icon}</span><b>${label}</b></button>`).join('')}</section><section class="app-section"><div class="section-heading"><div><span class="section-kicker">آخر حركة</span><h2>طلباتك</h2></div><button class="link-button" data-action="show-notice" data-message="كل طلباتك محفوظة داخل حسابك.">السجل الكامل ←</button></div><div class="customer-order-list">${orders.length ? orders.map((order) => `<article class="customer-order-card"><div class="customer-order-head"><span class="order-number">#${escapeHTML(String(order.id || '').slice(-4) || '1258')}</span>${statusBadge(order.statusText || order.status)}</div><h3>${escapeHTML(order.merchant || 'طلب مشاوير')}</h3><p>📍 ${escapeHTML(order.address || 'العنوان غير محدد')}</p>${order.courier?.full_name ? `<small class="courier-contact">المندوب: ${escapeHTML(order.courier.full_name)}${order.courier.phone ? ` · ${escapeHTML(order.courier.phone)}` : ''}</small>` : ''}<div class="customer-order-actions"><strong>${money(order.total)}</strong><button class="primary-button small-button" data-action="track-order" data-order-id="${escapeHTML(order.id || '')}">تتبع الطلب</button>${canonicalStatus(order) === 'pending' ? `<button class="ghost-button small-button" data-action="cancel-order" data-order-id="${escapeHTML(order.id || '')}">إلغاء</button>` : ''}</div></article>`).join('') : '<div class="empty-state">لم تطلب شيئًا بعد. أول مشوار مستنيك.</div>'}</div></section><section class="app-section"><div class="section-heading"><div><span class="section-kicker">اختيارات قريبة</span><h2>محلات قريتك</h2></div><button class="link-button" data-action="category" data-category="الكل">عرض الكل ←</button></div><div class="merchant-grid">${merchants.map(merchantCard).join('')}</div></section><section id="products" class="app-section"><div class="section-heading"><div><span class="section-kicker">اطلب اللي تحتاجه</span><h2>${state.selectedMerchant ? escapeHTML(selectedMerchant().name) : 'الأكثر طلبًا'}</h2></div><button class="link-button" data-action="open-cart">السلة (${state.cart.reduce((sum, item) => sum + item.quantity, 0)})</button></div><div class="product-grid">${filtered.map(productCard).join('') || '<div class="empty-state">لا توجد أصناف في هذا القسم بعد.</div>'}</div></section></main></div>`;
+  }
+
+  function dashboardTop() {
+    const admin = currentRole() === 'admin';
+    const name = state.profile?.full_name || state.user?.user_metadata?.full_name || roleName(currentRole());
+    const pageLabel = ROUTE_LABELS[state.route] || roleName(currentRole());
+    return `<section class="dashboard-heading"><div><span class="section-kicker">${admin ? 'صباح الخير' : 'جاهز للمشوار؟'} · ${escapeHTML(pageLabel)}</span><h1>${admin ? 'لوحة تحكم مشاوير' : `أهلاً ${escapeHTML(name.split(' ')[0])}`}</h1><p>${admin ? 'كل حركة الطلبات والمندوبين أمامك.' : 'استقبل طلبات جديدة وابقَ سابقًا بخطوة.'}</p></div><span class="online-badge ${state.courierOnline ? 'online' : ''}">${admin ? 'متصل الآن' : state.courierOnline ? 'متاح للعمل' : 'غير متاح'}</span></section>`;
+  }
+
+  function dashboardView() {
+    const role = currentRole();
+    const activeRoute = state.route || routeForRole(role);
+    const loading = state.lazyRoutePending === activeRoute;
+    const content = loading ? `<section class="route-loading"><span class="loading-dot"></span><span>جارٍ فتح ${escapeHTML(ROUTE_LABELS[activeRoute] || 'الوجهة')}...</span></section>` : `${dashboardTop()}${role === 'admin' ? adminView() : courierView()}`;
+    return `<div class="dashboard-layout"><aside class="side-panel">${brand()}<nav class="side-nav" aria-label="التنقل الرئيسي">${renderNavigation(role, activeRoute)}</nav><div class="side-footer">مشاوير<br />لوحة ${roleName(role)}<br /><span>${escapeHTML(ROUTE_LABELS[activeRoute] || '')}</span></div></aside><main class="dashboard-main">${content}</main><nav class="mobile-nav" aria-label="التنقل الرئيسي">${renderNavigation(role, activeRoute, true)}</nav></div>`;
+  }
+
+  async function boot() {
+    document.addEventListener('click', handleClick);
+    document.addEventListener('change', handleChange);
+    document.addEventListener('submit', handleSubmit);
+    app.innerHTML = '<div class="loading"><span class="loading-dot"></span></div>';
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+    if (client) {
+      await loadCatalog();
+      const { data } = await client.auth.getSession();
+      if (data.session?.user) await completeAuth(data.session.user);
+      client.auth.onAuthStateChange((_event, session) => {
+        if (!session?.user && state.user && !state.user.demo) { state.user = null; state.profile = null; render(); }
+      });
+    }
+    if (!state.user) render();
+  }
+
+  boot();
 })();
