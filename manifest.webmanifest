@@ -9,6 +9,7 @@
   "background_color": "#fffaf4",
   "theme_color": "#f06a3b",
   "icons": [
+    { "src": "logo-official-transparent.png", "sizes": "1024x1024", "type": "image/png", "purpose": "any maskable" },
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
   ]
 }
