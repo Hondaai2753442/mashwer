@@ -7,18 +7,32 @@
     <meta name="description" content="مشاوير، توصيل أسرع من محلات قريتك إلى بابك." />
     <base href="./" />
     <link rel="manifest" href="manifest.webmanifest" />
-    <link rel="icon" href="icon.svg" />
+    <link rel="icon" href="logo-official-transparent.png" />
     <link rel="stylesheet" href="styles.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=Manrope:wght@400;500;600;700;800&family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet" />
     <title>مشاوير | توصيل القرية</title>
   </head>
-  <body>
-    <div id="app"></div>
+  <body class="intro-lock">
+    <section id="intro-screen" class="intro-screen" aria-label="مقدمة مشاوير">
+      <video id="intro-video" class="intro-video" autoplay muted playsinline preload="auto" poster="logo-official-transparent.png">
+        <source src="intro.mp4" type="video/mp4" />
+      </video>
+      <div class="intro-overlay">
+        <img class="intro-logo" src="logo-official-transparent.png" alt="مشاوير" />
+        <div class="intro-copy">
+          <strong>مشاوير</strong>
+          <span>طلبك يوصل لحد بيتك</span>
+        </div>
+        <button id="skip-intro" class="intro-skip" data-action="skip-intro" type="button">تخطي</button>
+      </div>
+    </section>
+    <div id="app" aria-hidden="true"></div>
     <div id="toast" class="toast" aria-live="polite"></div>
     <script src="config.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4/dist/umd/supabase.min.js"></script>
+    <script src="navigation.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
