@@ -67,6 +67,7 @@
     products: [],
     orderRows: [],
     courierRows: [],
+    driverFilter: 'all',
     customerRows: [],
     notificationRows: [],
     category: 'الكل',
@@ -97,6 +98,12 @@
   const roleKey = (role) => ROLE_KEYS[normalizeRole(role)] || 'customer';
   const roleName = (role) => ({ customer: 'المستخدم', courier: 'المندوب', admin: 'الإدارة' }[roleKey(role)] || 'المستخدم');
   const currentRole = () => roleKey(state.profile?.role || state.user?.user_metadata?.role);
+  const courierState = (courier) => {
+    if (courier?.approved === false) return { label: 'غير معتمد', tone: 'new' };
+    if (Number(courier?.activeOrderCount || 0) > 0) return { label: `في مشوار (${courier.activeOrderCount})`, tone: 'progress' };
+    if (courier?.available === false) return { label: 'غير متاح', tone: 'neutral' };
+    return { label: 'متفرغ', tone: 'success' };
+  };
   const isDemo = () => state.demo === true;
   const isTerminal = (status) => TERMINAL_STATUSES.includes(status);
   const merchantFor = (id) => state.merchants.find((merchant) => String(merchant.id) === String(id));
@@ -289,6 +296,12 @@
       if (isDemo()) {
         localOrders();
       } else {
+        if (currentRole() === 'courier' && state.profile?.approved !== true) {
+          state.orderRows = [];
+          state.orders.status = 'empty';
+          render();
+          return;
+        }
         let query = client.from('orders').select('*, merchant:merchants(id,name,category,address_text), courier:profiles!orders_courier_id_fkey(id,full_name,phone)').order('created_at', { ascending: false });
         if (currentRole() === 'customer') query = query.eq('user_id', state.user.id);
         if (currentRole() === 'courier') query = query.or(`courier_id.eq.${state.user.id},and(courier_id.is.null,status.in.(pending,confirmed,searching_driver))`);
@@ -491,8 +504,14 @@
   }
 
   function renderAdminDrivers() {
-    const couriers = state.courierRows;
-    return `<main class="dashboard-main container"><div class="page-heading"><div><span class="section-kicker">فريق التوصيل</span><h1>المندوبون</h1><p>اعرض الاعتماد والتوفر وآخر نشاط لكل مندوب.</p></div><button class="secondary-button" data-action="load-admin-data">تحديث</button></div>${couriers.length ? `<div class="people-grid">${couriers.map((courier) => `<article class="person-card"><div class="person-avatar">${escapeHTML(initials(courier.full_name))}</div><div><h3>${escapeHTML(courier.full_name || 'مندوب')}</h3><p>${escapeHTML(courier.phone || 'بدون رقم')}</p><span class="status ${courier.approved === false ? 'new' : courier.available ? 'success' : 'neutral'}">${courier.approved === false ? 'بانتظار الموافقة' : courier.available ? 'متاح' : 'غير متاح'}</span></div><button class="secondary-button small-button" data-action="toggle-driver-approval" data-driver-id="${escapeHTML(courier.id)}" data-approved="${courier.approved === false ? 'false' : 'true'}">${courier.approved === false ? 'اعتماد' : 'تفاصيل'}</button></article>`).join('')}</div>` : '<section class="state-card state-empty"><h2>لا توجد بيانات مندوبين</h2><p>اضغط تحديث أو تأكد من وجود حسابات مندوبين معتمدة.</p></section>'}</main>`;
+    const counts = {
+      all: state.courierRows.length,
+      approved: state.courierRows.filter((courier) => courier.approved !== false).length,
+      unapproved: state.courierRows.filter((courier) => courier.approved === false).length
+    };
+    const couriers = state.courierRows.filter((courier) => state.driverFilter === 'all' || (state.driverFilter === 'approved' ? courier.approved !== false : courier.approved === false));
+    const filters = [['all', 'الكل'], ['approved', 'معتمد'], ['unapproved', 'غير معتمد']];
+    return `<main class="dashboard-main container"><div class="page-heading"><div><span class="section-kicker">فريق التوصيل</span><h1>المندوبون</h1><p>اعرض الاعتماد وحالة كل مندوب أثناء التعيين.</p></div><button class="secondary-button" data-action="load-admin-data">تحديث</button></div><div class="filter-row driver-filters">${filters.map(([value, label]) => `<button class="pill ${state.driverFilter === value ? 'active' : ''}" data-action="driver-filter" data-filter="${value}">${label} (${counts[value]})</button>`).join('')}</div>${couriers.length ? `<div class="people-grid">${couriers.map((courier) => { const status = courierState(courier); return `<article class="person-card"><div class="person-avatar">${escapeHTML(initials(courier.full_name))}</div><div><h3>${escapeHTML(courier.full_name || 'مندوب')}</h3><p>${escapeHTML(courier.phone || 'بدون رقم')}</p><span class="status ${status.tone}">${status.label}</span></div><button class="secondary-button small-button" data-action="toggle-driver-approval" data-driver-id="${escapeHTML(courier.id)}" data-approved="${courier.approved === false ? 'false' : 'true'}">${courier.approved === false ? 'اعتماد' : 'إلغاء الاعتماد'}</button></article>`; }).join('')}</div>` : `<section class="state-card state-empty"><h2>لا توجد بيانات بهذا الفلتر</h2><p>${state.driverFilter === 'unapproved' ? 'لا يوجد مندوبون بانتظار الاعتماد.' : 'اضغط تحديث أو تأكد من وجود حسابات مندوبين.'}</p></section>`}</main>`;
   }
 
   function renderAdminShops() {
@@ -597,13 +616,22 @@
   async function loadAdminData() {
     if (currentRole() !== 'admin') return;
     if (isDemo()) {
-      state.courierRows = [{ id: 'demo-driver-1', full_name: 'ياسر محمد', phone: '010•••8421', approved: true, available: true }, { id: 'demo-driver-2', full_name: 'كريم السيد', phone: '011•••1904', approved: false, available: false }];
+      state.courierRows = [{ id: 'demo-driver-1', full_name: 'ياسر محمد', phone: '010•••8421', approved: true, available: true, activeOrderCount: 1 }, { id: 'demo-driver-2', full_name: 'كريم السيد', phone: '011•••1904', approved: false, available: false, activeOrderCount: 0 }];
       return;
     }
     try {
-      const result = await client.from('profiles').select('id,full_name,phone,role,approved,available').eq('role', 'courier').order('full_name');
+      const [profilesResult, ordersResult] = await Promise.all([
+        client.from('profiles').select('id,full_name,phone,role,approved,available').eq('role', 'courier').order('full_name'),
+        client.from('orders').select('courier_id,status').not('courier_id', 'is', null).in('status', ACTIVE_STATUSES)
+      ]);
+      const result = profilesResult;
       if (result.error) throw result.error;
-      state.courierRows = result.data || [];
+      if (ordersResult.error) throw ordersResult.error;
+      const activeCounts = (ordersResult.data || []).reduce((counts, order) => {
+        counts[order.courier_id] = (counts[order.courier_id] || 0) + 1;
+        return counts;
+      }, {});
+      state.courierRows = (result.data || []).map((courier) => ({ ...courier, activeOrderCount: activeCounts[courier.id] || 0 }));
     } catch (error) {
       showToast(reportError('admin data', error), true);
     }
@@ -631,17 +659,16 @@
   }
 
   async function toggleDriverApproval(driverId, approved) {
-    if (approved) return showToast('المندوب معتمد بالفعل.');
     try {
       if (isDemo()) {
         const courier = state.courierRows.find((row) => String(row.id) === String(driverId));
-        if (courier) courier.approved = true;
+        if (courier) courier.approved = !approved;
       } else {
-        const result = await client.from('profiles').update({ approved: true }).eq('id', driverId).eq('role', 'courier');
+        const result = await client.from('profiles').update({ approved: !approved }).eq('id', driverId).eq('role', 'courier');
         if (result.error) throw result.error;
       }
       await loadAdminData();
-      showToast('تم اعتماد حساب المندوب.');
+      showToast(approved ? 'تم إلغاء اعتماد المندوب.' : 'تم اعتماد حساب المندوب.');
       render();
     } catch (error) {
       showToast(reportError('approve driver', error), true);
@@ -801,7 +828,7 @@
 
   function adminAssignModal(order) {
     const eligible = state.courierRows.filter((courier) => courier.approved !== false);
-    return `<div class="modal-head"><div><span class="section-kicker">تعيين مشوار</span><h2>#${escapeHTML(String(order.id).slice(-8))}</h2><p>${escapeHTML(order.merchant_name)}</p></div><button class="close-button" data-action="close-modal">×</button></div><div class="modal-body"><div class="field"><label for="courier-select">اختر المندوب</label><select id="courier-select" name="courier_id">${eligible.map((courier) => `<option value="${escapeHTML(courier.id)}">${escapeHTML(courier.full_name)}${courier.available ? ' · متاح' : ''}</option>`).join('')}</select></div>${eligible.length ? `<button class="primary-button full-button" data-action="admin-assign" data-order-id="${escapeHTML(order.id)}">تعيين المندوب</button>` : '<section class="state-card state-empty"><h2>لا يوجد مندوب معتمد</h2><p>اعتمد حساب مندوب أولًا ثم أعد المحاولة.</p></section>'}</div>`;
+    return `<div class="modal-head"><div><span class="section-kicker">تعيين مشوار</span><h2>#${escapeHTML(String(order.id).slice(-8))}</h2><p>${escapeHTML(order.merchant_name)}</p></div><button class="close-button" data-action="close-modal">×</button></div><div class="modal-body"><div class="field"><label for="courier-select">اختر المندوب وحالته الحالية</label><select id="courier-select" name="courier_id">${eligible.map((courier) => { const status = courierState(courier); return `<option value="${escapeHTML(courier.id)}">${escapeHTML(courier.full_name || 'مندوب')} · ${escapeHTML(status.label)}</option>`; }).join('')}</select><small class="field-hint">متفرغ = لا يوجد لديه طلب نشط، وفي مشوار = لديه طلب جارٍ الآن.</small></div>${eligible.length ? `<button class="primary-button full-button" data-action="admin-assign" data-order-id="${escapeHTML(order.id)}">تعيين المندوب</button>` : '<section class="state-card state-empty"><h2>لا يوجد مندوب معتمد</h2><p>اعتمد حساب مندوب أولًا ثم أعد المحاولة.</p></section>'}</div>`;
   }
 
   function adminAdvanceModal(order) {
@@ -930,6 +957,7 @@
     if (action === 'add-to-cart') { addToCart(target.dataset.productId); return; }
     if (action === 'cart-quantity') { changeCartQuantity(target.dataset.productId, Number(target.dataset.change || 0)); return; }
     if (action === 'orders-filter') { state.ordersFilter = target.dataset.filter || 'all'; render(); return; }
+    if (action === 'driver-filter') { state.driverFilter = target.dataset.filter || 'all'; render(); return; }
     if (action === 'track-order') { openOrder(target.dataset.orderId, 'tracking'); return; }
     if (action === 'open-driver-order') { openOrder(target.dataset.orderId, 'driver-order'); return; }
     if (action === 'open-admin-order') { openOrder(target.dataset.orderId, 'admin-order'); return; }
