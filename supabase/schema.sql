@@ -55,7 +55,7 @@ create table if not exists public.orders (
   subtotal numeric(10,2) not null default 0,
   delivery_fee numeric(10,2) not null default 0,
   total numeric(10,2) not null default 0,
-  payment_method text not null default 'paid_to_store' check (payment_method in ('paid_to_store', 'vodafone_cash', 'instapay', 'cash')),
+  payment_method text not null default 'paid_to_store' check (payment_method in ('paid_to_store', 'vodafone_cash', 'instapay', 'fawry', 'cash')),
   payment_status text not null default 'not_required' check (payment_status in ('not_required', 'pending', 'confirmed', 'rejected')),
   payment_reference text,
   address_text text not null,
@@ -72,6 +72,9 @@ create table if not exists public.orders (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.orders drop constraint if exists orders_payment_method_check;
+alter table public.orders add constraint orders_payment_method_check check (payment_method in ('paid_to_store', 'vodafone_cash', 'instapay', 'fawry', 'cash'));
 
 alter table public.orders add column if not exists pickup_address_text text;
 alter table public.orders add column if not exists pickup_latitude double precision;
@@ -222,11 +225,11 @@ as $$
 declare
   admin_id uuid;
 begin
-  insert into public.order_status_history (order_id, status, changed_by, notes)
+  insert into public.order_events (order_id, status, created_by, note)
   values (new.id, new.status, new.user_id, 'تم إنشاء الطلب');
   for admin_id in select id from public.profiles where role = 'admin' loop
-    insert into public.notifications (user_id, order_id, type, title, body)
-    values (admin_id, new.id, 'order_created', 'طلب جديد', 'تم إنشاء طلب جديد ويحتاج إلى متابعة.');
+    insert into public.notifications (user_id, title, body, kind)
+    values (admin_id, 'طلب جديد', 'تم إنشاء طلب جديد ويحتاج إلى متابعة.', 'order_created');
   end loop;
   return new;
 end;
@@ -264,14 +267,14 @@ begin
       updated_at = now()
   where id = order_id_value
   returning * into updated_order;
-  insert into public.order_status_history (order_id, status, changed_by, notes)
+  insert into public.order_events (order_id, status, created_by, note)
   values (updated_order.id, updated_order.status, auth.uid(), case when courier_id_value is null then 'تم إلغاء إسناد الطلب' else 'تم تعيين الطلب للمندوب' end);
   if courier_id_value is not null then
-    insert into public.notifications (user_id, order_id, type, title, body)
-    values (courier_id_value, updated_order.id, 'order_assigned', 'طلب جديد', 'تم إسناد طلب جديد إليك.');
+    insert into public.notifications (user_id, title, body, kind)
+    values (courier_id_value, 'طلب جديد', 'تم إسناد طلب جديد إليك.', 'order_assigned');
   end if;
-  insert into public.notifications (user_id, order_id, type, title, body)
-  values (updated_order.user_id, updated_order.id, 'order_assigned', 'تحديث الطلب', public.order_status_message(updated_order.status));
+  insert into public.notifications (user_id, title, body, kind)
+  values (updated_order.user_id, 'تحديث الطلب', public.order_status_message(updated_order.status), 'order_assigned');
   return to_jsonb(updated_order);
 end;
 $$;
@@ -308,18 +311,84 @@ begin
       updated_at = now()
   where id = order_id_value
   returning * into updated_order;
-  insert into public.order_status_history (order_id, status, changed_by, latitude, longitude, notes)
-  values (updated_order.id, updated_order.status, actor_id, latitude_value, longitude_value, note_value);
+  insert into public.order_events (order_id, status, created_by, note)
+  values (updated_order.id, updated_order.status, actor_id, note_value);
   message := public.order_status_message(updated_order.status);
-  insert into public.notifications (user_id, order_id, type, title, body)
-  values (updated_order.user_id, updated_order.id, 'order_status', 'تحديث الطلب', message);
+  insert into public.notifications (user_id, title, body, kind)
+  values (updated_order.user_id, 'تحديث الطلب', message, 'order_status');
   if updated_order.courier_id is not null and updated_order.courier_id <> actor_id then
-    insert into public.notifications (user_id, order_id, type, title, body)
-    values (updated_order.courier_id, updated_order.id, 'order_status', 'تحديث الطلب', message);
+    insert into public.notifications (user_id, title, body, kind)
+    values (updated_order.courier_id, 'تحديث الطلب', message, 'order_status');
   end if;
   return to_jsonb(updated_order);
 end;
 $$;
+
+create or replace function public.create_order(
+  merchant_id_value uuid,
+  items_value jsonb,
+  payment_method_value text,
+  payment_reference_value text,
+  address_text_value text,
+  contact_phone_value text,
+  notes_value text
+)
+returns jsonb
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  actor_id uuid := auth.uid();
+  merchant_row public.merchants%rowtype;
+  product_row public.products%rowtype;
+  item jsonb;
+  product_id_value uuid;
+  quantity_value integer;
+  subtotal_value numeric(10,2) := 0;
+  normalized_items jsonb := '[]'::jsonb;
+  new_order public.orders%rowtype;
+begin
+  if actor_id is null then raise exception 'يجب تسجيل الدخول'; end if;
+  if not exists (select 1 from public.profiles where id = actor_id and role = 'customer') then raise exception 'العميل فقط يستطيع إنشاء الطلبات'; end if;
+  if coalesce(trim(address_text_value), '') = '' or coalesce(trim(contact_phone_value), '') = '' then raise exception 'العنوان ورقم التواصل مطلوبان'; end if;
+  if payment_method_value not in ('paid_to_store', 'vodafone_cash', 'instapay', 'fawry', 'cash') then raise exception 'طريقة الدفع غير صحيحة'; end if;
+  if payment_method_value = 'fawry' then raise exception 'Fawry قيد التحديث حاليًا'; end if;
+  select * into merchant_row from public.merchants where id = merchant_id_value and active is true;
+  if merchant_row.id is null then raise exception 'المحل غير متاح'; end if;
+  if jsonb_typeof(items_value) <> 'array' or jsonb_array_length(items_value) = 0 then raise exception 'السلة فارغة'; end if;
+  for item in select value from jsonb_array_elements(items_value) loop
+    begin product_id_value := (item ->> 'product_id')::uuid; exception when others then raise exception 'الصنف غير صحيح'; end;
+    quantity_value := greatest(1, least(99, coalesce((item ->> 'quantity')::integer, 0)));
+    select * into product_row from public.products where id = product_id_value and merchant_id = merchant_id_value and available is true;
+    if product_row.id is null then raise exception 'أحد الأصناف غير متاح'; end if;
+    subtotal_value := subtotal_value + (product_row.price * quantity_value);
+    normalized_items := normalized_items || jsonb_build_array(jsonb_build_object('product_id', product_row.id, 'name', product_row.name, 'price', product_row.price, 'quantity', quantity_value));
+  end loop;
+  insert into public.orders (user_id, merchant_id, status, items, subtotal, delivery_fee, total, payment_method, payment_status, payment_reference, address_text, contact_phone, notes)
+  values (actor_id, merchant_row.id, 'pending', normalized_items, subtotal_value, merchant_row.delivery_value, subtotal_value + merchant_row.delivery_value, payment_method_value, case when payment_method_value = 'paid_to_store' then 'not_required' else 'pending' end, nullif(trim(payment_reference_value), ''), trim(address_text_value), trim(contact_phone_value), nullif(trim(notes_value), ''))
+  returning * into new_order;
+  return to_jsonb(new_order);
+end;
+$$;
+
+grant execute on function public.create_order(uuid, jsonb, text, text, text, text, text) to authenticated;
+
+create or replace function public.update_profile(full_name_value text)
+returns jsonb
+language plpgsql
+security definer set search_path = public
+as $$
+declare updated_profile public.profiles%rowtype;
+begin
+  if auth.uid() is null then raise exception 'يجب تسجيل الدخول'; end if;
+  if length(trim(coalesce(full_name_value, ''))) < 2 then raise exception 'الاسم غير صحيح'; end if;
+  update public.profiles set full_name = trim(full_name_value), updated_at = now() where id = auth.uid() returning * into updated_profile;
+  if updated_profile.id is null then raise exception 'الحساب غير موجود'; end if;
+  return to_jsonb(updated_profile);
+end;
+$$;
+
+grant execute on function public.update_profile(text) to authenticated;
 
 grant execute on function public.assign_order(uuid, uuid) to authenticated;
 
@@ -473,8 +542,16 @@ $$;
 grant execute on function public.set_pin(text) to authenticated;
 grant execute on function public.recover_password(text, text, text) to anon, authenticated;
 
-alter publication supabase_realtime add table public.orders;
-alter publication supabase_realtime add table public.notifications;
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'orders') then
+    alter publication supabase_realtime add table public.orders;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'notifications') then
+    alter publication supabase_realtime add table public.notifications;
+  end if;
+end;
+$$;
 
 -- بعد إنشاء حساب المدير، نفّذ هذا السطر مرة واحدة من SQL Editor:
 -- update public.profiles set role = 'admin' where phone = '+20XXXXXXXXXX';
