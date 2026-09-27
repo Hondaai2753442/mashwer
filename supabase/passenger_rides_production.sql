@@ -30,54 +30,17 @@ as $$
   ));
 $$;
 
-create or replace function public.ride_passenger_matches(ride_id_value uuid)
-returns boolean
-language sql
-security definer set search_path = public
-stable
-as $$
-  select exists (
-    select 1 from public.ride_requests
-    where id = ride_id_value and passenger_id = auth.uid()
-  );
-$$;
-
-create or replace function public.ride_offer_driver_matches(ride_id_value uuid)
-returns boolean
-language sql
-security definer set search_path = public
-stable
-as $$
-  select exists (
-    select 1 from public.ride_offers
-    where ride_id = ride_id_value and driver_id = auth.uid()
-  );
-$$;
-
-create or replace function public.ride_participant_matches(ride_id_value uuid)
-returns boolean
-language sql
-security definer set search_path = public
-stable
-as $$
-  select exists (
-    select 1 from public.ride_requests
-    where id = ride_id_value
-      and (passenger_id = auth.uid() or driver_id = auth.uid())
-  );
-$$;
-
-grant execute on function public.ride_passenger_matches(uuid) to authenticated;
-grant execute on function public.ride_offer_driver_matches(uuid) to authenticated;
-grant execute on function public.ride_participant_matches(uuid) to authenticated;
-
 drop policy if exists "ride participants read" on public.ride_requests;
 create policy "ride participants read" on public.ride_requests
   for select using (
     passenger_id = auth.uid()
     or driver_id = auth.uid()
     or public.is_admin()
-    or public.ride_offer_driver_matches(id)
+    or exists (
+      select 1 from public.ride_offers offer
+      where offer.ride_id = public.ride_requests.id
+        and offer.driver_id = auth.uid()
+    )
   );
 
 drop policy if exists "passengers create rides" on public.ride_requests;
@@ -87,7 +50,6 @@ create policy "ride offer participants read" on public.ride_offers
   for select using (
     driver_id = auth.uid()
     or public.is_admin()
-    or public.ride_passenger_matches(ride_id)
   );
 
 drop policy if exists "ride locations driver insert" on public.ride_locations;
@@ -96,7 +58,11 @@ create policy "ride locations participants read" on public.ride_locations
   for select using (
     driver_id = auth.uid()
     or public.is_admin()
-    or public.ride_participant_matches(ride_id)
+    or exists (
+      select 1 from public.ride_requests ride
+      where ride.id = public.ride_locations.ride_id
+        and (ride.passenger_id = auth.uid() or ride.driver_id = auth.uid())
+    )
   );
 
 drop policy if exists "ride events participants read" on public.ride_events;
@@ -104,7 +70,11 @@ create policy "ride events participants read" on public.ride_events
   for select using (
     actor_id = auth.uid()
     or public.is_admin()
-    or public.ride_participant_matches(ride_id)
+    or exists (
+      select 1 from public.ride_requests ride
+      where ride.id = public.ride_events.ride_id
+        and (ride.passenger_id = auth.uid() or ride.driver_id = auth.uid())
+    )
   );
 
 create or replace function public.dispatch_ride_offers(ride_id_value uuid)
