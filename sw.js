@@ -1,4 +1,4 @@
-const CACHE = 'mashwer-shell-v6';
+const CACHE = 'mashwer-shell-v7';
 const SHELL = [
   '/', '/index.html', '/styles.css', '/app.js', '/navigation.js', '/config.js',
   '/manifest.webmanifest', '/icon.svg', '/logo-official-transparent.png', '/intro.mp4',
