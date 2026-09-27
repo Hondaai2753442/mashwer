@@ -42,6 +42,7 @@
   const RIDE_STATUS_STEPS = ['searching', 'driver_assigned', 'driver_arriving', 'driver_arrived', 'in_progress', 'completed'];
   const RIDE_ACTIVE_STATUSES = ['searching', 'driver_assigned', 'driver_arriving', 'driver_arrived', 'in_progress'];
   const RIDE_TERMINAL_STATUSES = ['completed', 'cancelled', 'no_driver', 'expired'];
+  const RIDE_SELECT = 'id,passenger_id,driver_id,fare_rule_id,status,pickup_address,pickup_latitude,pickup_longitude,destination_address,destination_latitude,destination_longitude,estimated_distance_km,estimated_duration_minutes,actual_distance_km,actual_duration_minutes,quoted_fare,final_fare,payment_method,payment_status,payment_reference,notes,requested_at,assigned_at,started_at,completed_at,cancelled_at,cancellation_reason,created_at,updated_at,driver:profiles!ride_requests_driver_id_fkey(id,full_name,phone)';
   const STATUS_STEPS = ['pending', 'confirmed', 'searching_driver', 'assigned', 'driver_accepted', 'heading_to_pickup', 'arrived_pickup', 'picked_up', 'delivering', 'arrived_destination', 'delivered'];
   const ACTIVE_STATUSES = ['pending', 'confirmed', 'searching_driver', 'assigned', 'driver_accepted', 'heading_to_pickup', 'arrived_pickup', 'picked_up', 'delivering', 'arrived_destination'];
   const TERMINAL_STATUSES = ['delivered', 'cancelled', 'rejected', 'failed'];
@@ -382,7 +383,7 @@
         state.rideOfferRows = [{ id: 'DEMO-OFFER-1', ride_id: 'DEMO-RIDE-105', status: 'offered', distance_km: 2.1, expires_at: new Date(Date.now() + 45000).toISOString(), ride: normalizeRide({ id: 'DEMO-RIDE-105', status: 'searching', pickup_address: 'موقف الحدادي', destination_address: 'سيدي سالم', estimated_distance_km: 16.8, estimated_duration_minutes: 25, quoted_fare: 118 }) }];
       } else {
         if (currentRole() === 'courier') void client.rpc('expire_ride_offers');
-        let query = client.from('ride_requests').select('*, driver:profiles!ride_requests_driver_id_fkey(id,full_name,phone)').order('created_at', { ascending: false });
+        let query = client.from('ride_requests').select(RIDE_SELECT).order('created_at', { ascending: false });
         if (currentRole() === 'customer') query = query.eq('passenger_id', state.user.id);
         if (currentRole() === 'courier') query = query.eq('driver_id', state.user.id);
         const result = await query;
@@ -393,7 +394,7 @@
         if (offersResult.error) throw offersResult.error;
         const offerRideIds = (offersResult.data || []).map((offer) => offer.ride_id);
         const offeredRides = offerRideIds.length
-          ? await client.from('ride_requests').select('*, driver:profiles!ride_requests_driver_id_fkey(id,full_name,phone)').in('id', offerRideIds)
+          ? await client.from('ride_requests').select(RIDE_SELECT).in('id', offerRideIds)
           : { data: [], error: null };
         if (offeredRides.error) throw offeredRides.error;
         const offeredById = new Map((offeredRides.data || []).map((ride) => [ride.id, normalizeRide(ride)]));
