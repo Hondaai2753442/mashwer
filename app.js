@@ -230,8 +230,13 @@
     return `+${digits}`;
   }
 
-  function authEmail(phone) {
-    return `${normalizePhone(phone).replace('+', '')}@mashwer.local`;
+  function authEmail(value) {
+    const raw = String(value || '').trim();
+    if (raw.includes('@')) return raw.toLowerCase();
+    const digits = raw.replace(/\D/g, '');
+    if (digits) return `${normalizePhone(raw).replace('+', '')}@mashwer.local`;
+    const username = raw.toLowerCase().replace(/[^a-z0-9._-]/g, '');
+    return `${username}@mashwer.local`;
   }
 
   function authErrorMessage(error) {
@@ -762,7 +767,7 @@
     const role = state.authRole;
     const title = mode === 'signup' ? (role === 'courier' ? 'انضم كمندوب' : 'ابدأ أول مشوار') : mode === 'forgot' ? 'استرجاع كلمة المرور' : `دخول ${roleName(role)}`;
     const subtitle = mode === 'signup' ? 'سجّل بياناتك للانضمام إلى مشاوير.' : mode === 'forgot' ? 'استخدم رقم الهاتف وPIN الاسترجاع.' : 'أدخل بياناتك للوصول إلى مساحة حسابك.';
-    const roles = ['customer', 'courier'];
+    const roles = mode === 'signup' ? ['customer', 'courier'] : ['customer', 'courier', 'admin'];
     return `<div class="modal-head"><div><h2>${title}</h2><p>${subtitle}</p></div><button class="close-button" data-action="close-modal">×</button></div><div class="modal-body">${mode !== 'forgot' ? `<div class="auth-tabs"><button class="${mode === 'login' ? 'active' : ''}" data-action="auth-mode" data-mode="login">تسجيل الدخول</button><button class="${mode === 'signup' ? 'active' : ''}" data-action="auth-mode" data-mode="signup">حساب جديد</button></div><div class="role-tabs">${roles.map((item) => `<button class="${role === item ? 'active' : ''}" data-action="auth-role" data-role="${item}">${escapeHTML(roleName(item))}</button>`).join('')}</div>` : ''}<form id="auth-form" class="form-grid"><input type="hidden" name="mode" value="${mode}" /><input type="hidden" name="role" value="${role}" />${mode === 'signup' ? '<div class="field"><label>الاسم بالكامل</label><input name="full_name" required autocomplete="name" placeholder="مثال: أحمد محمد" /></div>' : ''}<div class="field"><label>رقم الهاتف</label><input name="phone" required inputmode="tel" autocomplete="tel" placeholder="01xxxxxxxxx" /></div>${mode === 'forgot' ? '<div class="field"><label>PIN الاسترجاع</label><input name="pin" required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" /></div>' : ''}<div class="field"><label>${mode === 'forgot' ? 'كلمة المرور الجديدة' : 'كلمة المرور'}</label><input name="password" type="password" required minlength="6" autocomplete="${mode === 'signup' ? 'new-password' : 'current-password'}" placeholder="6 أحرف أو أرقام على الأقل" /></div>${mode === 'signup' ? '<div class="field"><label>PIN الاسترجاع</label><input name="pin" required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="6 أرقام" /></div><div class="form-note">احفظ PIN في مكان آمن؛ سيُستخدم لاسترجاع الحساب.</div>' : ''}<button class="primary-button" type="submit" ${state.busy ? 'disabled' : ''}>${state.busy ? 'جارٍ التنفيذ...' : mode === 'signup' ? 'إنشاء الحساب' : mode === 'forgot' ? 'تغيير كلمة المرور' : 'تسجيل الدخول'}</button></form>${mode === 'login' ? '<button class="link-button auth-forgot" data-action="auth-mode" data-mode="forgot">نسيت كلمة المرور؟</button>' : ''}</div>`;
   }
 
@@ -871,8 +876,40 @@
     return (pages[route] || (() => `<main class="dashboard-main container"><section class="state-card state-error"><h2>المسار غير معروف</h2><p>تعريف المسار غير متاح لهذا الإصدار.</p></section></main>`))();
   }
 
-  function removePublicAdminEntry() {
-    app.querySelectorAll('.entry-admin, [data-role="admin"]').forEach((node) => node.remove());
+  function addPublicAdminEntry() {
+    const actions = app.querySelector('.landing-actions');
+    if (!actions || actions.querySelector('[data-role="admin"]')) return;
+    const button = document.createElement('button');
+    button.className = 'text-button admin-entry-link';
+    button.type = 'button';
+    button.dataset.action = 'open-auth';
+    button.dataset.mode = 'login';
+    button.dataset.role = 'admin';
+    button.textContent = 'دخول الإدارة';
+    actions.append(button);
+  }
+
+  function enhanceAuthForm() {
+    if (state.modal !== 'auth' || state.authMode !== 'login') return;
+    const input = app.querySelector('#auth-form input[name="phone"]');
+    const label = input?.closest('.field')?.querySelector('label');
+    if (!input || !label) return;
+    label.textContent = 'رقم الهاتف أو اسم المستخدم';
+    input.placeholder = '01xxxxxxxxx أو edara';
+    input.removeAttribute('inputmode');
+  }
+
+  function addMobileLogout() {
+    const nav = app.querySelector('.mobile-nav');
+    if (!nav || nav.querySelector('[data-action="logout"]')) return;
+    const button = document.createElement('button');
+    button.className = 'mobile-nav-item mobile-nav-logout';
+    button.type = 'button';
+    button.dataset.action = 'logout';
+    button.setAttribute('aria-label', 'تسجيل الخروج');
+    button.title = 'تسجيل الخروج';
+    button.innerHTML = `<span class="nav-icon">${renderIcon('account')}</span><span>خروج</span>`;
+    nav.append(button);
   }
 
   function enhancePaymentOptions() {
@@ -890,14 +927,17 @@
     resetRideMap();
     if (!state.user && !state.demo) {
       app.innerHTML = renderRideFirstLanding() + (state.modal ? renderModal() : '');
-      removePublicAdminEntry();
+      addPublicAdminEntry();
+      enhanceAuthForm();
       return;
     }
     if (!isRouteAllowed(state.route, currentRole())) state.route = routeForRole(currentRole());
     app.innerHTML = renderShell(routeContent(state.route));
+    addMobileLogout();
     enhancePaymentOptions();
     if (state.modal === 'passenger-ride') setTimeout(mountRideMap, 0);
     if (state.modal === 'ride-tracking') setTimeout(mountRideTrackingMap, 0);
+    enhanceAuthForm();
   }
 
   async function navigateRoute(route) {
@@ -1025,13 +1065,14 @@
     if (!client) return showToast('الاتصال بقاعدة البيانات غير متاح.', true);
     const data = new FormData(form);
     const mode = String(data.get('mode') || 'login');
-    const phone = normalizePhone(data.get('phone'));
+    const identifier = String(data.get('phone') || '').trim();
+    const phone = normalizePhone(identifier);
     const password = String(data.get('password') || '');
     state.busy = true;
     render();
     try {
       if (mode === 'login') {
-        const result = await client.auth.signInWithPassword({ email: authEmail(phone), password });
+        const result = await client.auth.signInWithPassword({ email: authEmail(identifier), password });
         if (result.error) throw result.error;
         if (!result.data.session) throw new Error('تعذر إنشاء جلسة الدخول.');
         await openSession(result.data.session);
