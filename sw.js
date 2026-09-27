@@ -4,7 +4,7 @@ const SHELL = [
   '/manifest.webmanifest', '/icon.svg', '/logo-official-transparent.png', '/intro.mp4',
   '/routes/customer-orders.js', '/routes/customer-cart.js', '/routes/customer-account.js', '/routes/customer-notifications.js',
   '/routes/driver-orders.js', '/routes/driver-earnings.js', '/routes/driver-notifications.js',
-  '/routes/admin-orders.js', '/routes/admin-drivers.js', '/routes/admin-shops.js', '/routes/admin-notifications.js'
+  '/routes/admin-orders.js', '/routes/admin-drivers.js', '/routes/admin-rides.js', '/routes/admin-shops.js', '/routes/admin-notifications.js'
 ];
 
 self.addEventListener('install', (event) => {

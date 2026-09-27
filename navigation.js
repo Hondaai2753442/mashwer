@@ -39,9 +39,9 @@
 
   // This is the single source of truth for labels, routes, roles, icons and order.
   const NAVIGATION_CONFIG = Object.freeze([
-    { id: 'customer-home', label: 'الرئيسية', icon: 'home', activeIcon: 'homeActive', route: 'customer.home', permission: [ROLES.CUSTOMER], badge: null, order: 10 },
-    { id: 'customer-orders', label: 'طلباتي', icon: 'orders', activeIcon: 'ordersActive', route: 'customer.orders', permission: [ROLES.CUSTOMER], badge: 'orders', order: 20 },
-    { id: 'customer-cart', label: 'السلة', icon: 'cart', activeIcon: 'cartActive', route: 'customer.cart', permission: [ROLES.CUSTOMER], badge: 'cart', order: 30 },
+    { id: 'customer-home', label: 'طلب مشوار', icon: 'home', activeIcon: 'homeActive', route: 'customer.home', permission: [ROLES.CUSTOMER], badge: null, order: 10 },
+    { id: 'customer-orders', label: 'رحلاتي وطلباتي', icon: 'orders', activeIcon: 'ordersActive', route: 'customer.orders', permission: [ROLES.CUSTOMER], badge: 'orders', order: 20 },
+    { id: 'customer-cart', label: 'توصيل الطلبات', icon: 'cart', activeIcon: 'cartActive', route: 'customer.cart', permission: [ROLES.CUSTOMER], badge: 'cart', order: 30 },
     { id: 'customer-account', label: 'حسابي', icon: 'account', activeIcon: 'accountActive', route: 'customer.account', permission: [ROLES.CUSTOMER], badge: null, order: 40 },
     { id: 'customer-notifications', label: 'الإشعارات', icon: 'notifications', activeIcon: 'notificationsActive', route: 'customer.notifications', permission: [ROLES.CUSTOMER], badge: 'notifications', order: 50 },
     { id: 'driver-home', label: 'الرئيسية', icon: 'home', activeIcon: 'homeActive', route: 'driver.home', permission: [ROLES.DRIVER], badge: null, order: 10 },
@@ -51,8 +51,9 @@
     { id: 'admin-overview', label: 'الرئيسية', icon: 'home', activeIcon: 'homeActive', route: 'admin.overview', permission: [ROLES.ADMIN], badge: null, order: 10 },
     { id: 'admin-orders', label: 'الطلبات', icon: 'orders', activeIcon: 'ordersActive', route: 'admin.orders', permission: [ROLES.ADMIN], badge: 'pendingOrders', order: 20 },
     { id: 'admin-drivers', label: 'المندوبون', icon: 'drivers', activeIcon: 'driversActive', route: 'admin.drivers', permission: [ROLES.ADMIN], badge: null, order: 30 },
-    { id: 'admin-shops', label: 'الأسعار', icon: 'shops', activeIcon: 'shopsActive', route: 'admin.shops', permission: [ROLES.ADMIN], badge: null, order: 40 },
-    { id: 'admin-notifications', label: 'الإشعارات', icon: 'notifications', activeIcon: 'notificationsActive', route: 'admin.notifications', permission: [ROLES.ADMIN], badge: 'notifications', order: 50 }
+    { id: 'admin-rides', label: 'رحلات الأفراد', icon: 'orders', activeIcon: 'ordersActive', route: 'admin.rides', permission: [ROLES.ADMIN], badge: 'pendingRides', order: 40 },
+    { id: 'admin-shops', label: 'الأسعار', icon: 'shops', activeIcon: 'shopsActive', route: 'admin.shops', permission: [ROLES.ADMIN], badge: null, order: 50 },
+    { id: 'admin-notifications', label: 'الإشعارات', icon: 'notifications', activeIcon: 'notificationsActive', route: 'admin.notifications', permission: [ROLES.ADMIN], badge: 'notifications', order: 60 }
   ].map(Object.freeze));
 
   const ROUTE_TITLES = Object.freeze(Object.fromEntries(
@@ -70,6 +71,7 @@
     'driver.notifications': () => import('./routes/driver-notifications.js'),
     'admin.orders': () => import('./routes/admin-orders.js'),
     'admin.drivers': () => import('./routes/admin-drivers.js'),
+    'admin.rides': () => import('./routes/admin-rides.js'),
     'admin.shops': () => import('./routes/admin-shops.js'),
     'admin.notifications': () => import('./routes/admin-notifications.js')
   });
