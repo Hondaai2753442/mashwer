@@ -54,10 +54,69 @@ jobs:
         run: npx cap add android
       - name: Sync web app
         run: npx cap sync android
+      - name: Add Android runtime permissions
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          manifest = Path('android/app/src/main/AndroidManifest.xml')
+          text = manifest.read_text()
+          anchor = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+          permissions = '\n'.join([
+              '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />',
+              '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />',
+              '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
+          ])
+          if 'android.permission.ACCESS_FINE_LOCATION' not in text:
+              text = text.replace(anchor, anchor + '\n' + permissions, 1)
+              manifest.write_text(text)
+          PY
+          cat > android/app/src/main/java/com/mashwer/delivery/MainActivity.java <<'EOF'
+          package com.mashwer.delivery;
+
+          import android.Manifest;
+          import android.content.pm.PackageManager;
+          import android.os.Build;
+          import android.os.Bundle;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+              private static final int REQUEST_LOCATION = 21;
+              private static final int REQUEST_NOTIFICATIONS = 22;
+
+              @Override
+              public void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  requestNextPermission();
+              }
+
+              private void requestNextPermission() {
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                          && checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
+                          && checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                      requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, REQUEST_LOCATION);
+                      return;
+                  }
+                  requestNotificationPermission();
+              }
+
+              private void requestNotificationPermission() {
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                          && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                      requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQUEST_NOTIFICATIONS);
+                  }
+              }
+
+              @Override
+              public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+                  super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+                  if (requestCode == REQUEST_LOCATION) requestNotificationPermission();
+              }
+          }
+          EOF
       - name: Set release version
         run: |
-          sed -i 's/versionCode 1/versionCode 6/' android/app/build.gradle
-          sed -i 's/versionName "1.0"/versionName "1.0.6"/' android/app/build.gradle
+          sed -i -E 's/versionCode[[:space:]]+[0-9]+/versionCode 7/; s/versionName[[:space:]]+["'"'][^"'"']+["'"']/versionName "1.0.7"/' android/app/build.gradle
       - name: Build APK and AAB
         working-directory: android
         run: ./gradlew assembleDebug bundleRelease
